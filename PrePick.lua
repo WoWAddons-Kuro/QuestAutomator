@@ -220,42 +220,39 @@ local function IconFor(c)
 end
 
 --------------------------------------------------------------------------------
--- Tooltip: the full item tooltip (quest-log item when the choice came from the
--- log, so it shows the "Currently equipped" comparison; the hyperlink otherwise).
+-- Tooltip: the full item tooltip by hyperlink / itemID, plus the "Currently
+-- equipped" comparison. Never SetQuestLogItem("choice", index): that reads the
+-- *selected* log quest, which at accept time is rarely the one just taken.
 --------------------------------------------------------------------------------
 function PrePick.ShowTooltip(row)
 	local c = row.choice
 	if not c or not GameTooltip then return end
 	GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
 	local shown = false
-	if state.source and state.source.name == "log" and not state.preview and GameTooltip.SetQuestLogItem then
-		-- Era / Forever both take ("choice", index) for the selected log quest.
-		shown = pcall(GameTooltip.SetQuestLogItem, GameTooltip, "choice", c.index)
+	if c.link then
+		shown = pcall(GameTooltip.SetHyperlink, GameTooltip, c.link)
 	end
-	if not shown and c.link then
-		GameTooltip:SetHyperlink(c.link)
-		shown = true
+	if not shown and c.itemID and GameTooltip.SetItemByID then
+		shown = pcall(GameTooltip.SetItemByID, GameTooltip, c.itemID)
 	end
 	if not shown then
 		GameTooltip:SetText(c.name or "?")
 	end
-	if GameTooltip_ShowCompareItem and not state.preview then pcall(GameTooltip_ShowCompareItem, GameTooltip) end
+	if GameTooltip_ShowCompareItem then pcall(GameTooltip_ShowCompareItem, GameTooltip) end
 	GameTooltip:Show()
 end
 
 --------------------------------------------------------------------------------
 -- Stat deltas: { { label, value, delta } ... }, item level first, then the stats
 -- the class weights care about (heaviest first), each against the worn piece.
--- Sample rows carry a ready-made list in c.sampleDeltas.
 --------------------------------------------------------------------------------
 local function WornStats(c)
 	local link = c.worn and c.worn.link
 	if not link then return {} end
-	return NS.Client.ItemStats(link) or Rewards.StatsFromTooltipData(nil) or {}
+	return NS.Client.ItemStats(link) or {}
 end
 
 function PrePick.StatDeltas(c, player)
-	if c.sampleDeltas then return c.sampleDeltas end
 	local out = {}
 	local wornLevel = c.worn and c.worn.itemLevel or nil
 	out[#out + 1] = { label = L["ilevel"], value = c.itemLevel or 0, delta = wornLevel and ((c.itemLevel or 0) - wornLevel) or nil }
@@ -395,26 +392,44 @@ function PrePick.Choose(c)
 	PrePick.Render()
 end
 
--- Evaluates the log rewards of questID; opens the window when the engine would only
 --------------------------------------------------------------------------------
 -- Preview (unlocked) mode: the settings checkbox "Unlock and show the pick window"
--- shows the window with sample rows so the player can drag it into place. No quest
--- is involved: clicks do nothing, the title says so, and hiding it re-locks.
+-- shows the window with sample rows so the player can drag it into place. The
+-- rows are real items (by itemID) gathered and run through the engine exactly
+-- like a quest's rewards, so the grid shows live deltas against the player's
+-- gear. No quest is involved: clicks do nothing, the title says so, and hiding
+-- it re-locks.
 --------------------------------------------------------------------------------
-local SAMPLE_ROWS = {
-	{ index = 1, lootType = 0, name = "Sample Sword", quality = 2, itemLevel = 22, loaded = true, wearable = true, worn = { itemLevel = 18 }, delta = 4, isUpgrade = true, hardToValue = false, icon = "Interface\\Icons\\INV_Sword_04",
-		sampleDeltas = { { label = "ilevel", value = 22, delta = 4 }, { label = "Intellect", value = 12, delta = -3 }, { label = "Strength", value = 18, delta = 1 }, { label = "Stamina", value = 9, delta = 0 } } },
-	{ index = 2, lootType = 0, name = "Sample Trinket", quality = 3, itemLevel = 22, loaded = true, wearable = false, hardToValue = true, hardReason = "trinket", icon = "Interface\\Icons\\INV_Misc_OrbOfDeception" },
-	{ index = 3, lootType = 0, name = "Sample Cloak", quality = 2, itemLevel = 20, loaded = true, wearable = true, worn = { itemLevel = 20 }, delta = 0, isSidegrade = true, hardToValue = false, icon = "Interface\\Icons\\INV_Misc_Cape_11",
-		sampleDeltas = { { label = "ilevel", value = 20, delta = 0 }, { label = "Agility", value = 6, delta = 2 }, { label = "Armor", value = 24, delta = -5 } } },
+-- The Deadmines reward set: a rare weapon, a rare mail chest, a Use trinket.
+PrePick.SAMPLE_ITEM_IDS = {
+	2244,   -- Cruel Barb (one-hand sword, rare)
+	10399,  -- Blackened Defias Armor (mail chest, rare)
+	19024,  -- Arena Grand Master (trinket, Use effect)
 }
+PrePick.SAMPLE_QUEST_ID = -1
+
+-- Gathers the sample items; retries while the client loads their data.
+local function LoadSample(attempt)
+	attempt = attempt or 1
+	if not state.preview then return end
+	local source = Rewards.ItemListSource(PrePick.SAMPLE_ITEM_IDS)
+	local choices = Rewards.Gather(source.Count(), source)
+	local decision = Rewards.Evaluate(choices, NS.db.settings, Rules.Player())
+	if decision.pending and attempt < PrePick.MAX_LOAD_TRIES then
+		for _, c in ipairs(choices) do
+			if c.loaded == false and c.itemID then NS.Call("C_Item.RequestLoadItemDataByID", c.itemID) end
+		end
+		NS.After(PrePick.RETRY_DELAY, function() LoadSample(attempt + 1) end)
+	end
+	state.choices, state.decision, state.source = choices, decision, source
+	PrePick.Render()
+end
 
 function PrePick.SetUnlocked(unlocked)
 	if unlocked then
 		if not frame then frame = BuildFrame() end
-		state.questID, state.choices, state.preview = -1, SAMPLE_ROWS, true
-		state.decision = { tier = "1", action = "recommend", index = 1, reason = "trinket" }
-		PrePick.Render()
+		state.questID, state.preview = PrePick.SAMPLE_QUEST_ID, true
+		LoadSample()
 	elseif state.preview then
 		PrePick.Hide()
 	end

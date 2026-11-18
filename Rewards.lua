@@ -32,14 +32,19 @@ Rewards.OFFER = {
 -- The quest log counts item choices only (GetNumQuestLogChoices(questID), the
 -- QuestUtils_GetBestQualityItemRewardIndex convention) and indexes them the way
 -- QuestInfo.lua numbers its buttons in questLog mode (choiceItemIndex).
+-- Item facts are then read by itemID (itemBased), not by log index, because the
+-- index-based log globals answer for the *selected* log quest on both clients.
 function Rewards.LogSource(questID)
 	return {
 		name = "log",
+		itemBased = true,
 		questID = questID,
 		Count = function() return NS.Client.LogChoiceCount(questID) end,
 		LootType = function() return Rewards.LOOT_ITEM end,
 		Info = function(i) return NS.Client.LogChoiceInfo(i, questID) end,
-		Link = function(i) return NS.Call("GetQuestLogItemLink", "choice", i) end,
+		-- Nil on purpose: FillFromItem resolves the link from the itemID. The
+		-- index link (GetQuestLogItemLink) belongs to the selected log quest.
+		Link = function() return nil end,
 		Tooltip = function(i) return NS.Client.LogChoiceTooltip(i, questID) end,
 	}
 end
@@ -229,7 +234,59 @@ end
 
 --------------------------------------------------------------------------------
 -- The choices of the open reward panel.
+-- Where the source knows the item (a quest-log entry, a fixed item list) the item
+-- facts are read by *itemID*: link, quality, item level and vendor price from
+-- C_Item.GetItemInfo(itemID), effect lines from C_TooltipInfo.GetItemByID, so
+-- nothing depends on which log quest happens to be selected. The NPC offer panel
+-- keeps its own tooltip (GetQuestItem).
 --------------------------------------------------------------------------------
+-- Reads the choice's own facts from the item (itemID preferred, link otherwise).
+function Rewards.FillFromItem(c, source)
+	local ref = c.itemID or c.link
+	if not ref then
+		c.loaded = false
+		return c
+	end
+	local id, _, _, equipLoc, _, classID, subclassID = NS.Call("C_Item.GetItemInfoInstant", ref)
+	c.itemID = c.itemID or NS.SafeNumber(id)
+	c.equipLoc = NS.SafeString(equipLoc)
+	c.classID = NS.SafeNumber(classID)
+	c.subclassID = NS.SafeNumber(subclassID)
+	local iname, ilink, iquality, ilvl, minLevel, _, _, _, _, _, sellPrice = NS.Call("C_Item.GetItemInfo", ref)
+	if NS.SafeString(iname) then
+		c.loaded = true
+		c.name = c.name or NS.SafeString(iname)
+		c.link = c.link or NS.SafeString(ilink)
+		c.quality = NS.SafeNumber(iquality) or c.quality
+		c.itemLevel = NS.SafeNumber(ilvl) or 0
+		c.minLevel = NS.SafeNumber(minLevel) or 0
+		c.sellPrice = NS.SafeNumber(sellPrice) or 0
+	else
+		c.loaded = false
+	end
+	local stats = Rewards.StatsFromAPI(c.link)
+	c.statsSource = stats and "api" or nil
+	-- The tooltip is always read for effect lines (Use / Chance on hit /
+	-- unparsed Equip), even when the API already gave the stats.
+	local tipData
+	if source and source.itemBased and c.itemID then
+		tipData = NS.Call("C_TooltipInfo.GetItemByID", c.itemID)
+	elseif source and source.Tooltip then
+		tipData = source.Tooltip(c.index)
+	end
+	if not tipData and c.link then tipData = NS.Call("C_TooltipInfo.GetHyperlink", c.link) end
+	local tooltipStats, effects = Rewards.StatsFromTooltipData(tipData)
+	if not stats then
+		stats = tooltipStats
+		c.statsSource = stats and "tooltip" or "none"
+	end
+	c.hasUseEffect = effects.use
+	c.hasProcEffect = effects.proc
+	c.hasUnknownEquip = effects.unknownEquip
+	c.stats = stats or {}
+	return c
+end
+
 function Rewards.Gather(numChoices, source)
 	source = source or Rewards.OFFER
 	local choices = {}
@@ -244,44 +301,37 @@ function Rewards.Gather(numChoices, source)
 			c.usable = NS.Safe(usable) ~= false and NS.Safe(usable) ~= 0
 			c.itemID = NS.SafeNumber(itemID)
 			c.link = NS.SafeString(source.Link(i))
-			local ref = c.link or c.itemID
-			if ref then
-				local id, _, _, equipLoc, _, classID, subclassID = NS.Call("C_Item.GetItemInfoInstant", ref)
-				c.itemID = c.itemID or NS.SafeNumber(id)
-				c.equipLoc = NS.SafeString(equipLoc)
-				c.classID = NS.SafeNumber(classID)
-				c.subclassID = NS.SafeNumber(subclassID)
-				local iname, _, iquality, ilvl, minLevel, _, _, _, _, _, sellPrice = NS.Call("C_Item.GetItemInfo", ref)
-				if NS.SafeString(iname) then
-					c.loaded = true
-					c.name = c.name or NS.SafeString(iname)
-					c.quality = NS.SafeNumber(iquality) or c.quality
-					c.itemLevel = NS.SafeNumber(ilvl) or 0
-					c.minLevel = NS.SafeNumber(minLevel) or 0
-					c.sellPrice = NS.SafeNumber(sellPrice) or 0
-				else
-					c.loaded = false
-				end
-				local stats = Rewards.StatsFromAPI(c.link)
-				c.statsSource = stats and "api" or nil
-				-- The tooltip is always read for effect lines (Use / Chance on hit /
-				-- unparsed Equip), even when the API already gave the stats.
-				local tooltipStats, effects = Rewards.StatsFromTooltipData(source.Tooltip(i))
-				if not stats then
-					stats = tooltipStats
-					c.statsSource = stats and "tooltip" or "none"
-				end
-				c.hasUseEffect = effects.use
-				c.hasProcEffect = effects.proc
-				c.hasUnknownEquip = effects.unknownEquip
-				c.stats = stats or {}
-			else
-				c.loaded = false
+			-- Era's log info has no itemID: take it from the link.
+			if not c.itemID and c.link then
+				c.itemID = NS.SafeNumber((NS.Call("C_Item.GetItemInfoInstant", c.link)))
 			end
+			Rewards.FillFromItem(c, source)
 		end
 		choices[#choices + 1] = c
 	end
 	return choices
+end
+
+-- A fixed list of item IDs as a reward source (the pick window's preview rows).
+-- Choice i is itemIDs[i]; count 1, always usable.
+function Rewards.ItemListSource(itemIDs)
+	return {
+		name = "items",
+		itemBased = true,
+		itemIDs = itemIDs,
+		Count = function() return #itemIDs end,
+		LootType = function() return Rewards.LOOT_ITEM end,
+		Info = function(i)
+			local id = itemIDs[i]
+			local name, _, quality = NS.Call("C_Item.GetItemInfo", id)
+			return name, nil, 1, quality, true, id
+		end,
+		Link = function(i)
+			local _, link = NS.Call("C_Item.GetItemInfo", itemIDs[i])
+			return link
+		end,
+		Tooltip = function(i) return NS.Call("C_TooltipInfo.GetItemByID", itemIDs[i]) end,
+	}
 end
 
 --------------------------------------------------------------------------------

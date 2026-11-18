@@ -266,4 +266,5 @@ L["Unlock and show the pick window (drag it, then untick)"] = "Unlock and show t
 L["Shows the pick window with sample rewards so you can drag it where you want it. The position is remembered; untick to lock it again."] = "Shows the pick window with sample rewards so you can drag it where you want it. The position is remembered; untick to lock it again."
 L["Chat messages for quests accepted, handed in and rewards chosen"] = "Chat messages for quests accepted, handed in and rewards chosen"
 L["Sample quest"] = "Sample quest"
-L["Preview: drag me into place, then untick the setting to lock."] = "Preview: drag me into place, then untick the setting to lock."L["ilevel"] = "ilevel"
+L["Preview: drag me into place, then untick the setting to lock."] = "Preview: drag me into place, then untick the setting to lock."
+L["ilevel"] = "ilevel"
