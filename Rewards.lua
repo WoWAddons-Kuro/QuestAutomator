@@ -44,37 +44,8 @@ function Rewards.LogSource(questID)
 	}
 end
 
--- This build's format strings (GlobalStrings on wago.tools, build 1.60.1.69893,
--- enUS and zhCN), used when the client's global is missing or does not match.
--- The client's own value is always tried first.
-Rewards.FORMATS = {
-	ITEM_MOD_MANA = { "%c%s Mana", "%c%s 法力" },
-	ITEM_MOD_HEALTH = { "%c%s Health", "%c%s 生命" },
-	ITEM_MOD_AGILITY = { "%c%s Agility", "%c%s 敏捷" },
-	ITEM_MOD_STRENGTH = { "%c%s Strength", "%c%s 力量" },
-	ITEM_MOD_SPIRIT = { "%c%s Spirit", "%c%s 精神" },
-	ITEM_MOD_STAMINA = { "%c%s Stamina", "%c%s 耐力" },
-	ITEM_MOD_INTELLECT = { "%c%s Intellect", "%c%s 智力" },
-	ITEM_MOD_DEFENSE_SKILL_RATING = { "Increases defense skill by %s.", "防御技能提高%s点。" },
-	ITEM_MOD_DODGE_RATING = { "Increases your dodge by %s.", "使你的躲闪提高%s点。" },
-	ITEM_MOD_PARRY_RATING = { "Increases your parry by %s.", "使你的招架提高%s点。" },
-	ITEM_MOD_BLOCK_RATING = { "Increases your shield block by %s.", "使你的盾牌格挡提高%s点。" },
-	ITEM_MOD_HIT_RATING = { "Increases your hit by %s.", "使你的命中提高%s点。" },
-	ITEM_MOD_CRIT_RATING = { "Increases your critical strike by %s.", "使你的爆击提高%s点。" },
-	ITEM_MOD_HASTE_RATING = { "Increases your haste by %s.", "使你的急速提高%s点。" },
-	ITEM_MOD_SPELL_HEALING_DONE = { "Increases healing done by magical spells and effects by up to %s.", "魔法法术和效果的治疗量提高最多%s点。" },
-	ITEM_MOD_SPELL_DAMAGE_DONE = { "Increases damage done by magical spells and effects by up to %s.", "魔法法术和效果的伤害量提高最多%s点。" },
-	ITEM_MOD_ATTACK_POWER = { "Increases attack power by %s.", "攻击强度提高%s点。" },
-	ITEM_MOD_RANGED_ATTACK_POWER = { "Increases ranged attack power by %s.", "远程攻击强度提高%s点。" },
-	ITEM_MOD_FERAL_ATTACK_POWER = { "Increases attack power by %s in Cat, Bear, Dire Bear, and Moonkin forms only.", "在猎豹、巨熊、巨熊（增强）和枭兽形态下攻击强度提高%s点。" },
-	ITEM_MOD_MANA_REGENERATION = { "Restores %s mana per 5 sec.", "每5秒回复%s点法力值。" },
-	ITEM_MOD_HEALTH_REGENERATION = { "Restores %s health per 5 sec.", "每5秒回复%s点生命值。" },
-	ITEM_MOD_SPELL_POWER = { "Increases spell power by %s.", "法术强度提高%s点。" },
-	ITEM_MOD_BLOCK_VALUE = { "Increases the block value of your shield by %s.", "使你的盾牌格挡值提高%s点。" },
-	DPS_TEMPLATE = { "(%s damage per second)", "（每秒伤害%s）" },
-	ARMOR_TEMPLATE = { "%s Armor", "%s点护甲" },
-	ITEM_SPELL_TRIGGER_ONEQUIP = { "Equip:", "装备：" },
-}
+-- Format strings for the tooltip parser live in the client adapter
+-- (NS.Client.StatFormats(): Forever's rating strings, Era's vanilla ones).
 
 -- Tag -> stat key for the pseudo-stats.
 Rewards.TEMPLATE_KEYS = { DPS_TEMPLATE = "DAMAGE_PER_SECOND", ARMOR_TEMPLATE = "ARMOR" }
@@ -93,6 +64,10 @@ function Rewards.CompilePattern(fmt)
 	while i <= n do
 		local c = fmt:sub(i, i)
 		if c == "%" then
+			if fmt:sub(i, i + 1) == "%%" then
+				out[#out + 1] = "%%"
+				i = i + 2
+			else
 			local pos, spec = fmt:match("^%%(%d*%$?)([csd])", i)
 			if spec then
 				i = i + 2 + #pos
@@ -106,6 +81,7 @@ function Rewards.CompilePattern(fmt)
 			else
 				out[#out + 1] = "%%"
 				i = i + 1
+			end
 			end
 		else
 			if c:match("[%^%$%(%)%.%[%]%*%+%-%?]") then
@@ -126,7 +102,8 @@ function Rewards.FormatsFor(tag)
 	local list = {}
 	local live = _G[tag]
 	if type(live) == "string" and live ~= "" then list[#list + 1] = live end
-	for _, fmt in ipairs(Rewards.FORMATS[tag] or {}) do
+	local formats = NS.Client.StatFormats()
+	for _, fmt in ipairs(formats[tag] or {}) do
 		if fmt ~= live then list[#list + 1] = fmt end
 	end
 	return list

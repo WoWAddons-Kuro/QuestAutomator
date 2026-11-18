@@ -259,6 +259,85 @@ function Forever.MaxLevel(fallback) return SharedMaxLevel(fallback) end
 function Era.MaxLevel(fallback) return SharedMaxLevel(fallback) end
 
 --------------------------------------------------------------------------------
+-- Tooltip stat format strings, keyed by ITEM_MOD_* tag (plus DPS_TEMPLATE,
+-- ARMOR_TEMPLATE, ITEM_SPELL_TRIGGER_ONEQUIP). Rewards.FormatsFor tries the
+-- client's live global first, then these. "%c" = sign, "%s"/"%d" = number,
+-- "%%" = a literal percent sign.
+--
+-- Forever: GlobalStrings of build 1.60.1.69893 (wago.tools), enUS and zhCN.
+-- Era: the green "Equip:" lines are vanilla spell descriptions, not GlobalStrings,
+-- so they are written out here (enUS; zhCN descriptions not verified, the plain
+-- "+N Stat" lines share the Forever strings). Percent-based hit/crit/dodge/parry/
+-- block are mapped onto the *_RATING keys: the weights are per point and a vanilla
+-- percent is worth about one rating step at the levels that quest rewards cover.
+--------------------------------------------------------------------------------
+local SHARED_STAT_FORMATS = {
+	ITEM_MOD_MANA = { "%c%s Mana", "%c%s 法力" },
+	ITEM_MOD_HEALTH = { "%c%s Health", "%c%s 生命" },
+	ITEM_MOD_AGILITY = { "%c%s Agility", "%c%s 敏捷" },
+	ITEM_MOD_STRENGTH = { "%c%s Strength", "%c%s 力量" },
+	ITEM_MOD_SPIRIT = { "%c%s Spirit", "%c%s 精神" },
+	ITEM_MOD_STAMINA = { "%c%s Stamina", "%c%s 耐力" },
+	ITEM_MOD_INTELLECT = { "%c%s Intellect", "%c%s 智力" },
+	DPS_TEMPLATE = { "(%s damage per second)", "（每秒伤害%s）" },
+	ARMOR_TEMPLATE = { "%s Armor", "%s点护甲" },
+	ITEM_SPELL_TRIGGER_ONEQUIP = { "Equip:", "装备：" },
+}
+
+local function MergeFormats(base, extra)
+	local out = {}
+	for tag, list in pairs(base) do
+		out[tag] = {}
+		for _, fmt in ipairs(list) do out[tag][#out[tag] + 1] = fmt end
+	end
+	for tag, list in pairs(extra) do
+		out[tag] = out[tag] or {}
+		for _, fmt in ipairs(list) do out[tag][#out[tag] + 1] = fmt end
+	end
+	return out
+end
+
+Forever.STAT_FORMATS = MergeFormats(SHARED_STAT_FORMATS, {
+	ITEM_MOD_DEFENSE_SKILL_RATING = { "Increases defense skill by %s.", "防御技能提高%s点。" },
+	ITEM_MOD_DODGE_RATING = { "Increases your dodge by %s.", "使你的躲闪提高%s点。" },
+	ITEM_MOD_PARRY_RATING = { "Increases your parry by %s.", "使你的招架提高%s点。" },
+	ITEM_MOD_BLOCK_RATING = { "Increases your shield block by %s.", "使你的盾牌格挡提高%s点。" },
+	ITEM_MOD_HIT_RATING = { "Increases your hit by %s.", "使你的命中提高%s点。" },
+	ITEM_MOD_CRIT_RATING = { "Increases your critical strike by %s.", "使你的爆击提高%s点。" },
+	ITEM_MOD_HASTE_RATING = { "Increases your haste by %s.", "使你的急速提高%s点。" },
+	ITEM_MOD_SPELL_HEALING_DONE = { "Increases healing done by magical spells and effects by up to %s.", "魔法法术和效果的治疗量提高最多%s点。" },
+	ITEM_MOD_SPELL_DAMAGE_DONE = { "Increases damage done by magical spells and effects by up to %s.", "魔法法术和效果的伤害量提高最多%s点。" },
+	ITEM_MOD_ATTACK_POWER = { "Increases attack power by %s.", "攻击强度提高%s点。" },
+	ITEM_MOD_RANGED_ATTACK_POWER = { "Increases ranged attack power by %s.", "远程攻击强度提高%s点。" },
+	ITEM_MOD_FERAL_ATTACK_POWER = { "Increases attack power by %s in Cat, Bear, Dire Bear, and Moonkin forms only.", "在猎豹、巨熊、巨熊（增强）和枭兽形态下攻击强度提高%s点。" },
+	ITEM_MOD_MANA_REGENERATION = { "Restores %s mana per 5 sec.", "每5秒回复%s点法力值。" },
+	ITEM_MOD_HEALTH_REGENERATION = { "Restores %s health per 5 sec.", "每5秒回复%s点生命值。" },
+	ITEM_MOD_SPELL_POWER = { "Increases spell power by %s.", "法术强度提高%s点。" },
+	ITEM_MOD_BLOCK_VALUE = { "Increases the block value of your shield by %s.", "使你的盾牌格挡值提高%s点。" },
+})
+
+Era.STAT_FORMATS = MergeFormats(SHARED_STAT_FORMATS, {
+	ITEM_MOD_DEFENSE_SKILL_RATING = { "Increased Defense +%s.", "Increased Defense +%s", "%c%s Defense" },
+	ITEM_MOD_DODGE_RATING = { "Increases your chance to dodge an attack by %s%%.", "%c%s%% Dodge" },
+	ITEM_MOD_PARRY_RATING = { "Increases your chance to parry an attack by %s%%.", "%c%s%% Parry" },
+	ITEM_MOD_BLOCK_RATING = { "Increases your chance to block attacks with a shield by %s%%.", "%c%s%% Block" },
+	ITEM_MOD_HIT_RATING = { "Improves your chance to hit by %s%%.", "Improves your chance to hit with spells by %s%%.", "%c%s%% Hit" },
+	ITEM_MOD_CRIT_RATING = { "Improves your chance to get a critical strike by %s%%.", "Improves your chance to get a critical strike with spells by %s%%.", "%c%s%% Critical Strike" },
+	ITEM_MOD_SPELL_HEALING_DONE = { "Increases healing done by spells and effects by up to %s.", "Increases healing done by magical spells and effects by up to %s." },
+	ITEM_MOD_SPELL_DAMAGE_DONE = { "Increases damage done by magical spells and effects by up to %s." },
+	ITEM_MOD_SPELL_POWER = { "Increases damage and healing done by magical spells and effects by up to %s." },
+	ITEM_MOD_ATTACK_POWER = { "%c%s Attack Power.", "%c%s Attack Power", "Increases attack power by %s." },
+	ITEM_MOD_RANGED_ATTACK_POWER = { "%c%s ranged Attack Power.", "%c%s ranged Attack Power", "Increases ranged attack power by %s." },
+	ITEM_MOD_FERAL_ATTACK_POWER = { "%c%s Attack Power in Cat, Bear, Dire Bear, and Moonkin forms only." },
+	ITEM_MOD_MANA_REGENERATION = { "Restores %s mana per 5 sec.", "Restores %s mana every 5 sec." },
+	ITEM_MOD_HEALTH_REGENERATION = { "Restores %s health per 5 sec.", "Restores %s health every 5 sec." },
+	ITEM_MOD_BLOCK_VALUE = { "Increases the block value of your shield by %s." },
+})
+
+function Forever.StatFormats() return Forever.STAT_FORMATS end
+function Era.StatFormats() return Era.STAT_FORMATS end
+
+--------------------------------------------------------------------------------
 -- Reward panels: where Blizzard draws reward buttons, and how to read the
 -- choices shown. Both flavours draw the NPC detail / reward panels through
 -- QuestInfo_Display; only the quest log differs (Era uses QuestFrameItems_Update
