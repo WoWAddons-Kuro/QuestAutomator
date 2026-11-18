@@ -159,8 +159,30 @@ local function ShowTooltip(owner)
 		paused and (" (" .. L["paused for this session"] .. ")") or ""), 1, 1, 1)
 	GameTooltip:AddDoubleLine(L["Reward choice"], NS.TierSummaryShort(), 1, 1, 1, 1, 1, 1)
 	GameTooltip:AddDoubleLine(L["Pause key"], s.modifier == "NONE" and L["none"] or s.modifier, 1, 1, 1, 1, 1, 1)
-	GameTooltip:AddLine(L["Left-click: switch the automation on or off. Right-click: menu. Drag to move."], 0.8, 0.8, 0.8)
+	-- Log quests with a reward to choose, and where each stands.
+	local pending = NS.PrePick and NS.PrePick.PendingQuests and NS.PrePick.PendingQuests() or {}
+	if #pending > 0 then
+		GameTooltip:AddLine(" ")
+		GameTooltip:AddLine(string.format(L["Rewards to choose: %d"], #pending), 1, 0.82, 0)
+		for _, q in ipairs(pending) do
+			local status, r, g, b
+			if q.picked then status, r, g, b = L["your pick"], 0.25, 1, 0.25
+			elseif q.action == "auto" then status, r, g, b = L["auto"], 0.6, 0.6, 0.6
+			else status, r, g, b = L["decide"], 1, 0.82, 0 end
+			GameTooltip:AddDoubleLine(q.title or ("#" .. q.questID), status, 1, 1, 1, r, g, b)
+		end
+		GameTooltip:AddLine(L["Left-click: open the pick window. Right-click: menu. Drag to move."], 0.8, 0.8, 0.8)
+	else
+		GameTooltip:AddLine(L["Left-click: switch the automation on or off. Right-click: menu. Drag to move."], 0.8, 0.8, 0.8)
+	end
 	GameTooltip:Show()
+end
+
+-- Left-click: the pick window when any log quest has a reward to choose, else
+-- the on/off switch.
+local function OnLeftClick()
+	if NS.PrePick and NS.PrePick.OpenAny and NS.PrePick.OpenAny() then return end
+	NS.SetFlag("enabled", "", L["Automation"])
 end
 
 --------------------------------------------------------------------------------
@@ -246,7 +268,7 @@ local function CreateButton()
 		if mouseButton == "RightButton" then
 			NS.OpenMinimapMenu(self)
 		else
-			NS.SetFlag("enabled", "", L["Automation"])
+			OnLeftClick()
 		end
 	end)
 	button:SetScript("OnDragStart", function(self) self:SetScript("OnUpdate", OnDragUpdate) end)

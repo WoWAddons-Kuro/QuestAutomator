@@ -281,3 +281,12 @@ L["Chat messages for quests accepted, handed in and rewards chosen"] = "接受�
 L["Sample quest"] = "示例任务"
 L["Preview: drag me into place, then untick the setting to lock."] = "预览：把我拖到合适位置，然后取消勾选设置以锁定。"
 L["ilevel"] = "物品等级"
+
+-- Pending quest list (pick window + minimap tooltip)
+L["(auto)"] = "（自动）"
+L["(decide)"] = "（待定）"
+L["your pick"] = "你的预选"
+L["decide"] = "待定"
+L["Rewards to choose: %d"] = "待选奖励：%d"
+L["Left-click: open the pick window. Right-click: menu. Drag to move."] = "左键：打开预选窗口。右键：菜单。拖动：移动。"
+L["No quest in your log has a reward to choose."] = "任务日志中没有需要选择奖励的任务。"

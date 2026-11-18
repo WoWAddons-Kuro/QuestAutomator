@@ -111,15 +111,23 @@ end
 function Forever.QuestRewardXP(questID)
 	return NS.SafeNumber(SafeCall("GetQuestLogRewardXP", questID)) or 0
 end
+
+-- Era's quest-log globals (GetQuestLogRewardXP, GetNumQuestLogChoices,
+-- GetQuestLogChoiceInfo, C_TooltipInfo.GetQuestLogItem) read the *selected* log
+-- entry and take no questID. Select the quest, call fn, restore the selection.
+-- Returns fn's results, or nothing when the quest is not in the log.
+local function EraWithLogSelection(questID, fn)
+	local index = NS.SafeNumber(SafeCall("GetQuestLogIndexByID", questID))
+	if not index or index <= 0 then return nil end
+	local previous = NS.SafeNumber(SafeCall("GetQuestLogSelection"))
+	if previous ~= index then SafeCall("SelectQuestLogEntry", index) end
+	local results = { fn() }
+	if previous and previous ~= index then SafeCall("SelectQuestLogEntry", previous) end
+	return unpack(results, 1, table.maxn(results))
+end
 function Era.QuestRewardXP(questID)
 	-- The Era global reads the *selected* log entry: select, read, restore.
-	local index = NS.SafeNumber(SafeCall("GetQuestLogIndexByID", questID))
-	if not index or index <= 0 then return 0 end
-	local previous = NS.SafeNumber(SafeCall("GetQuestLogSelection"))
-	SafeCall("SelectQuestLogEntry", index)
-	local xp = NS.SafeNumber(SafeCall("GetQuestLogRewardXP")) or 0
-	if previous and previous ~= index then SafeCall("SelectQuestLogEntry", previous) end
-	return xp
+	return NS.SafeNumber(EraWithLogSelection(questID, function() return SafeCall("GetQuestLogRewardXP") end)) or 0
 end
 
 --------------------------------------------------------------------------------
@@ -499,14 +507,21 @@ end
 
 --------------------------------------------------------------------------------
 -- Quest-log reward source arguments. Forever's log functions take questID; Era's
--- read the selected quest and take none.
+-- read the selected quest and take none, so the Era adapters select the quest
+-- for the duration of the call and restore the previous selection.
 --------------------------------------------------------------------------------
 function Forever.LogChoiceCount(questID) return SafeCall("GetNumQuestLogChoices", questID) end
 function Forever.LogChoiceInfo(i, questID) return SafeCall("GetQuestLogChoiceInfo", i, questID) end
 function Forever.LogChoiceTooltip(i, questID) return SafeCall("C_TooltipInfo.GetQuestLogItem", "choice", i, questID) end
-function Era.LogChoiceCount(questID) return SafeCall("GetNumQuestLogChoices") end
-function Era.LogChoiceInfo(i, questID) return SafeCall("GetQuestLogChoiceInfo", i) end
-function Era.LogChoiceTooltip(i, questID) return SafeCall("C_TooltipInfo.GetQuestLogItem", "choice", i) end
+function Era.LogChoiceCount(questID)
+	return EraWithLogSelection(questID, function() return SafeCall("GetNumQuestLogChoices") end)
+end
+function Era.LogChoiceInfo(i, questID)
+	return EraWithLogSelection(questID, function() return SafeCall("GetQuestLogChoiceInfo", i) end)
+end
+function Era.LogChoiceTooltip(i, questID)
+	return EraWithLogSelection(questID, function() return SafeCall("C_TooltipInfo.GetQuestLogItem", "choice", i) end)
+end
 
 --------------------------------------------------------------------------------
 -- Selection and debug.

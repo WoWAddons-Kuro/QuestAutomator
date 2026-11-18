@@ -19,11 +19,12 @@ PrePick.ICON_SIZE = 36
 PrePick.ROW_HEIGHT = 54        -- name line (14) + 2 grid lines (13 each) + spacing
 PrePick.WIDTH = 360
 PrePick.STAT_COLS = 2          -- stat deltas laid out in this many columns
+PrePick.LIST_LINE_HEIGHT = 16  -- one line per pending quest in the quest list
 PrePick.OPEN_DELAY = 0.3   -- seconds after QUEST_ACCEPTED before the log is read
 PrePick.MAX_LOAD_TRIES = 6
 PrePick.RETRY_DELAY = 0.5
 
-local frame, rows = nil, {}
+local frame, rows, questLines = nil, {}, {}
 local state = { questID = nil, choices = nil, decision = nil, attempt = 0 }
 PrePick.state = state
 
@@ -44,6 +45,63 @@ end
 function PrePick.Clear(questID)
 	local store = NS.chardb and NS.chardb.prePicks
 	if store and questID then store[questID] = nil end
+end
+
+--------------------------------------------------------------------------------
+-- Pending quests: every log quest with two or more item choices, i.e. a reward
+-- decision that will be made at hand-in. Each entry says whether the player has
+-- already pre-picked (picked = itemID) and whether the engine would decide on its
+-- own (auto) or wants the player (recommend). Used by the window's quest list and
+-- the minimap tooltip.
+--   -> list of { questID, title, choiceCount, picked, action, pending }
+-- Gathering reads every choice's item data, so the list is cached for a moment
+-- (Render and the tooltip may ask several times in one frame).
+--------------------------------------------------------------------------------
+PrePick.PENDING_CACHE_SECONDS = 0.5
+local pendingCache = { at = -1, list = {} }
+function PrePick.PendingQuests()
+	if not NS.loaded then return {} end
+	local now = NS.Now()
+	if now - pendingCache.at < PrePick.PENDING_CACHE_SECONDS then return pendingCache.list end
+	local list = {}
+	local player = Rules.Player()
+	for _, entry in ipairs(NS.Client.QuestLogEntries()) do
+		local source = Rewards.LogSource(entry.questID)
+		local n = NS.SafeNumber(source.Count()) or 0
+		if n >= 2 then
+			local item = { questID = entry.questID, title = entry.title, choiceCount = n, picked = PrePick.Get(entry.questID) }
+			local choices = Rewards.Gather(n, source)
+			local decision = Rewards.Evaluate(choices, NS.db.settings, player)
+			item.pending = decision.pending == true
+			item.action = decision.action
+			list[#list + 1] = item
+		end
+	end
+	pendingCache.at, pendingCache.list = now, list
+	return list
+end
+
+-- Drops the cache (a pick was made, a quest came or went).
+function PrePick.InvalidatePending()
+	pendingCache.at = -1
+end
+
+-- Opens the window on the first pending quest that needs the player (else the
+-- first pending quest at all). False when the log holds no quest with a choice.
+function PrePick.OpenAny()
+	if state.preview then return false end
+	local pending = PrePick.PendingQuests()
+	if #pending == 0 then return false end
+	local target = pending[1]
+	for _, q in ipairs(pending) do
+		if not q.picked and q.action ~= "auto" then target = q; break end
+	end
+	if state.questID and frame and frame:IsShown() then
+		for _, q in ipairs(pending) do
+			if q.questID == state.questID then target = q; break end
+		end
+	end
+	return PrePick.Open(target.questID, true)
 end
 
 -- Window position, account-wide: settings.prePickPos = { point, x, y }.
@@ -114,8 +172,45 @@ local function BuildFrame()
 	f.Later:SetText(L["Decide at hand-in"])
 	f.Later:SetScript("OnClick", function() PrePick.Dismiss() end)
 
+	-- Quest list: one line per pending quest, under the reason line; the shown
+	-- quest is highlighted, clicking another switches the rows to it. Hidden when
+	-- only one quest is pending (the title already names it).
+	f.List = CreateFrame("Frame", nil, f)
+	f.List:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -46)
+	f.List:SetPoint("RIGHT", f, "RIGHT", -20, 0)
+	f.List:SetHeight(1)
+	f.List:Hide()
+
 	f:Hide()
 	return f
+end
+
+local function BuildQuestLine(index)
+	local line = CreateFrame("Button", nil, frame.List)
+	line:SetHeight(PrePick.LIST_LINE_HEIGHT)
+	line:SetPoint("LEFT", frame.List, "LEFT", 0, 0)
+	line:SetPoint("RIGHT", frame.List, "RIGHT", 0, 0)
+	line.Text = line:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	line.Text:SetPoint("LEFT", line, "LEFT", 4, 0)
+	line.Text:SetPoint("RIGHT", line, "RIGHT", -4, 0)
+	line.Text:SetJustifyH("LEFT")
+	line.Text:SetWordWrap(false)
+	line.Current = line:CreateTexture(nil, "BACKGROUND")
+	line.Current:SetAllPoints(line)
+	line.Current:SetColorTexture(1, 0.85, 0.3, 0.15)
+	line.Current:Hide()
+	local hl = line:CreateTexture(nil, "HIGHLIGHT")
+	hl:SetAllPoints(line)
+	hl:SetColorTexture(1, 1, 1, 0.08)
+	line:SetScript("OnClick", function(self)
+		if self.questID and self.questID ~= state.questID then PrePick.Open(self.questID, true) end
+	end)
+	return line
+end
+
+local function QuestLine(index)
+	if not questLines[index] then questLines[index] = BuildQuestLine(index) end
+	return questLines[index]
 end
 
 local function BuildRow(index)
@@ -339,7 +434,31 @@ function PrePick.Render()
 	end
 	local picked = PrePick.Get(state.questID)
 	local player = not state.preview and Rules.Player() or nil
-	local y = -52
+	-- Quest list between the reason line and the rows: only with 2+ pending quests.
+	local pending = (not state.preview) and PrePick.PendingQuests() or {}
+	local listHeight = 0
+	if #pending >= 2 then
+		for i, q in ipairs(pending) do
+			local line = QuestLine(i)
+			line.questID = q.questID
+			line:ClearAllPoints()
+			line:SetPoint("TOPLEFT", frame.List, "TOPLEFT", 0, -(i - 1) * PrePick.LIST_LINE_HEIGHT)
+			line:SetPoint("RIGHT", frame.List, "RIGHT", 0, 0)
+			local mark = q.picked and ("|cff40ff40" .. L["(your pick)"] .. "|r")
+				or (q.action == "auto" and ("|cff808080" .. L["(auto)"] .. "|r") or ("|cffffd100" .. L["(decide)"] .. "|r"))
+			line.Text:SetText(string.format("%s  %s", q.title or ("#" .. q.questID), mark))
+			line.Current:SetShown(q.questID == state.questID)
+			line:Show()
+		end
+		for i = #pending + 1, #questLines do questLines[i]:Hide() end
+		listHeight = #pending * PrePick.LIST_LINE_HEIGHT + 6
+		frame.List:SetHeight(listHeight)
+		frame.List:Show()
+	else
+		for _, line in ipairs(questLines) do line:Hide() end
+		frame.List:Hide()
+	end
+	local y = -52 - listHeight
 	local shown = 0
 	for i, c in ipairs(state.choices) do
 		if c.lootType == Rewards.LOOT_ITEM then
@@ -379,6 +498,7 @@ end
 function PrePick.Choose(c)
 	if not c or not state.questID then return end
 	if state.preview then return end
+	PrePick.InvalidatePending()
 	if PrePick.Get(state.questID) == c.itemID then
 		PrePick.Clear(state.questID)
 		NS.Print(L["Pre-pick cleared for %s."], NS.Client.QuestTitle(state.questID) or state.questID)
@@ -478,14 +598,30 @@ NS.RegisterEvent("QUEST_ACCEPTED", function(a, b)
 	-- Forever passes questID first; Era passes questIndex, questID (QuestLogDocumentation).
 	local questID = NS.SafeNumber(b) or NS.SafeNumber(a)
 	if not questID or questID <= 0 then return end
-	NS.After(PrePick.OPEN_DELAY, function() PrePick.Open(questID, false) end)
+	NS.After(PrePick.OPEN_DELAY, function()
+		PrePick.InvalidatePending()
+		-- A newly accepted quest takes the window; when its reward is auto and the
+		-- window already shows another quest, the quest list just gains a line.
+		if not PrePick.Open(questID, false) and frame and frame:IsShown() and not state.preview then
+			PrePick.Render()
+		end
+	end)
 end)
 
+-- Hand-in / abandon: drop the pre-pick; if the window showed that quest, move
+-- on to the next pending one or close.
 local function Forget(questID)
 	questID = NS.SafeNumber(questID)
 	if not questID then return end
 	PrePick.Clear(questID)
-	if state.questID == questID then PrePick.Hide() end
+	PrePick.InvalidatePending()
+	if state.questID == questID and not state.preview then
+		local wasShown = frame and frame:IsShown()
+		PrePick.Hide()
+		if wasShown then NS.After(PrePick.OPEN_DELAY, function() if not state.questID then PrePick.OpenAny() end end) end
+	elseif frame and frame:IsShown() and not state.preview then
+		PrePick.Render()
+	end
 end
 NS.RegisterEvent("QUEST_TURNED_IN", Forget)
 NS.RegisterEvent("QUEST_REMOVED", Forget)

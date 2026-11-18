@@ -36,6 +36,12 @@
 - When an accepted quest's reward would only be recommended, a small window lists the choices with
   the engine's suggestion glowing; click one and the hand-in becomes automatic. Stored per character
   by quest and item ID; cleared on hand-in or abandon. `/qam pick [questID]`, `/qam prepick on|off`.
+- Several quests with a choice at once: the window lists every log quest that has one (your pick /
+  auto / decide); click a quest to see its rewards. Handing in or abandoning the shown quest moves on
+  to the next. The minimap tooltip lists the same quests; left-click opens the window while any exist
+  (otherwise it toggles the automation, as before).
+- Quest-log rewards are read by item ID, not by log index, so the window shows the right items no
+  matter which quest is selected in the log (Era selects and restores the log entry).
 
 ## Upstream 0.3.0 (Smart Quest Automation)
 

@@ -268,3 +268,12 @@ L["Chat messages for quests accepted, handed in and rewards chosen"] = "Chat mes
 L["Sample quest"] = "Sample quest"
 L["Preview: drag me into place, then untick the setting to lock."] = "Preview: drag me into place, then untick the setting to lock."
 L["ilevel"] = "ilevel"
+
+-- Pending quest list (pick window + minimap tooltip)
+L["(auto)"] = "(auto)"
+L["(decide)"] = "(decide)"
+L["your pick"] = "your pick"
+L["decide"] = "decide"
+L["Rewards to choose: %d"] = "Rewards to choose: %d"
+L["Left-click: open the pick window. Right-click: menu. Drag to move."] = "Left-click: open the pick window. Right-click: menu. Drag to move."
+L["No quest in your log has a reward to choose."] = "No quest in your log has a reward to choose."
