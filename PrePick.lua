@@ -141,12 +141,15 @@ local function BuildRow(index)
 	row.Name:SetPoint("RIGHT", row, "RIGHT", -4, 0)
 	row.Name:SetJustifyH("LEFT")
 
-	-- Stat delta grid under the name: STAT_COLS columns of fixed-width cells, each
-	-- three font strings in fixed sub-columns so the numbers line up down the rows:
-	--   [label, left][value, RIGHT, wide enough for "999"][delta, left, wide enough for "+999"]
-	-- Widths are measured once from the font so they hold on any UI scale / locale.
+	-- Stat delta grid under the name: STAT_COLS columns, each a fixed layout of
+	--   [label cell ................][value cell][delta cell]
+	-- Every sub-cell is anchored to the ROW at a fixed x, never to its neighbour, so
+	-- the value and delta columns sit in the same place on every line regardless of
+	-- label length. Value is right-justified and sized for "999"; delta is left-
+	-- justified and sized for "+999"; the label takes what is left and clips.
 	row.Cells = {}
-	local colW = math.floor((PrePick.WIDTH - 40 - PrePick.ICON_SIZE - 8) / PrePick.STAT_COLS)
+	local gridLeft = PrePick.ICON_SIZE + 8
+	local colW = math.floor((PrePick.WIDTH - 40 - gridLeft) / PrePick.STAT_COLS)
 	local measure = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	measure:SetText("999")
 	local valueW = math.ceil(measure:GetStringWidth()) + 2
@@ -154,22 +157,24 @@ local function BuildRow(index)
 	local deltaW = math.ceil(measure:GetStringWidth()) + 2
 	measure:Hide()
 	local gap = 4
-	local labelW = colW - valueW - deltaW - 2 * gap - 6
+	local labelW = colW - valueW - deltaW - 2 * gap - 8
+	local nameTop = -(2 + 14)  -- below the name line
 	for i = 1, PrePick.STAT_COLS * 2 do
 		local col, line = (i - 1) % PrePick.STAT_COLS, math.floor((i - 1) / PrePick.STAT_COLS)
-		local x, y = col * colW, -2 - line * 13
+		local x0 = gridLeft + col * colW
+		local y = nameTop - 2 - line * 13
 		local label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		label:SetPoint("TOPLEFT", row.Name, "BOTTOMLEFT", x, y)
+		label:SetPoint("TOPLEFT", row, "TOPLEFT", x0, y)
 		label:SetSize(labelW, 12)
 		label:SetJustifyH("LEFT")
 		label:SetWordWrap(false)
 		label:SetTextColor(0.69, 0.69, 0.69)
 		local value = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		value:SetPoint("TOPLEFT", label, "TOPRIGHT", gap, 0)
+		value:SetPoint("TOPLEFT", row, "TOPLEFT", x0 + labelW + gap, y)
 		value:SetSize(valueW, 12)
 		value:SetJustifyH("RIGHT")
 		local delta = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		delta:SetPoint("TOPLEFT", value, "TOPRIGHT", gap, 0)
+		delta:SetPoint("TOPLEFT", row, "TOPLEFT", x0 + labelW + gap + valueW + gap, y)
 		delta:SetSize(deltaW, 12)
 		delta:SetJustifyH("LEFT")
 		row.Cells[i] = { label = label, value = value, delta = delta }
