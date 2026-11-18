@@ -34,6 +34,20 @@ or only recommends (glow + chat line). Every tier's action is a setting.
 “Wearable” means your class's *best* armour class at your level (mail until 40 then plate for warriors and
 paladins, etc.) and weapons your class can train. `/qam why` explains the choice on screen.
 
+When you **accept** a quest whose reward the addon would only recommend, a small window shows the choices
+right away (the suggestion glows). Click one and the hand-in is automatic anyway. `/qam pick` re-opens it.
+
+## Testing checklist (first in-game run)
+
+1. `/qam debug` - note the `Client: flavour ...` line (forever / classic_era) and any `missing` API.
+2. Talk to a quest giver with a completed quest and 2+ rewards: does the right one glow? `/qam why`.
+3. `/qam tier` lists the tiers; `/qam tier 2 recommend` flips one; the glow should follow.
+4. Accept a quest with a rare or trinket reward: the pre-pick window should appear; click a reward,
+   then hand the quest in later - it should be taken automatically ("your pre-pick").
+5. Esc -> Options -> AddOns -> QuestAutomator: all controls present, weights line shows your class.
+6. Era only: quest log reward glow (QuestLogFrame), XP bar overlay, `/qam debug` for atlas / template misses.
+7. `/qam log 30` after a session; paste it with any `Warning:` lines.
+
 ## Commands
 
 `/qam` prints status; `/qam help` lists everything. Highlights: `on|off`, `pause`, `tier <1-5> recommend|auto`,
