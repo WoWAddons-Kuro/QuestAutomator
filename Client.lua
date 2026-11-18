@@ -72,7 +72,12 @@ end
 function Era.IsQuestRepeatable(questID)
 	local row = EraLogRow(questID)
 	if not row then return nil end
-	return row.frequency > 0
+	-- Legacy GetQuestLogTitle uses 1 for normal, 2 for daily, 3 for weekly.
+	-- These are not the zero-based frequency values returned by gossip.
+	-- The log frequency cannot identify ordinary repeatable quests; those are
+	-- identified by the gossip/greeting repeatable flag when available.
+	return row.frequency == (LE_QUEST_FREQUENCY_DAILY or 2)
+		or row.frequency == (LE_QUEST_FREQUENCY_WEEKLY or 3)
 end
 
 -- Is the quest in the log and complete (ready to hand in)? true / false / nil (unknown).
