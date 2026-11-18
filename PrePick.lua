@@ -128,12 +128,16 @@ local function BuildRow(index)
 	row.Icon:SetPoint("LEFT", row, "LEFT", 0, 0)
 	row.Icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
 
-	row.Border = row:CreateTexture(nil, "OVERLAY")
-	row.Border:SetSize(PrePick.ICON_SIZE * 1.7, PrePick.ICON_SIZE * 1.7)
-	row.Border:SetPoint("CENTER", row.Icon, "CENTER", 0, 0)
-	row.Border:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
-	row.Border:SetBlendMode("ADD")
-	row.Border:SetVertexColor(1, 0.85, 0.3)
+	-- Suggested / picked marker: a yellow glow border around the whole card.
+	row.Border = CreateFrame("Frame", nil, row, BackdropTemplateMixin and "BackdropTemplate" or nil)
+	row.Border:SetPoint("TOPLEFT", row, "TOPLEFT", -4, 3)
+	row.Border:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 4, -1)
+	row.Border:SetFrameLevel(row:GetFrameLevel())
+	if row.Border.SetBackdrop then
+		row.Border:SetBackdrop({ edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 12, bgFile = "Interface\\Buttons\\WHITE8x8", insets = { left = 3, right = 3, top = 3, bottom = 3 } })
+		row.Border:SetBackdropColor(1, 0.85, 0.3, 0.08)
+		row.Border:SetBackdropBorderColor(1, 0.85, 0.3, 0.9)
+	end
 	row.Border:Hide()
 
 	row.Name = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -352,7 +356,7 @@ function PrePick.Render()
 			local hex = colors and colors.hex or "|cffffffff"
 			local isPicked = picked ~= nil and c.itemID == picked
 			local isSuggested = decision and decision.index == c.index
-			row.Name:SetText(hex .. (c.name or "?") .. "|r" .. (isPicked and (" |cff40ff40" .. L["(your pick)"] .. "|r") or (isSuggested and (" |cffffd100" .. L["(suggested)"] .. "|r") or "")))
+			row.Name:SetText(hex .. (c.name or "?") .. "|r" .. (isPicked and (" |cff40ff40" .. L["(your pick)"] .. "|r") or ""))
 			-- Stat grid when the item is wearable (there is something to compare); the
 			-- engine's reason line otherwise (hard to value, cannot wear...).
 			local deltas = c.wearable and PrePick.StatDeltas(c, player) or nil
