@@ -141,17 +141,38 @@ local function BuildRow(index)
 	row.Name:SetPoint("RIGHT", row, "RIGHT", -4, 0)
 	row.Name:SetJustifyH("LEFT")
 
-	-- Stat delta grid under the name: STAT_COLS columns, each "label  value  +delta".
-	-- Cells are plain font strings; Render fills them from PrePick.StatDeltas(c).
+	-- Stat delta grid under the name: STAT_COLS columns of fixed-width cells, each
+	-- three font strings in fixed sub-columns so the numbers line up down the rows:
+	--   [label, left][value, RIGHT, wide enough for "999"][delta, left, wide enough for "+999"]
+	-- Widths are measured once from the font so they hold on any UI scale / locale.
 	row.Cells = {}
 	local colW = math.floor((PrePick.WIDTH - 40 - PrePick.ICON_SIZE - 8) / PrePick.STAT_COLS)
+	local measure = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	measure:SetText("999")
+	local valueW = math.ceil(measure:GetStringWidth()) + 2
+	measure:SetText("+999")
+	local deltaW = math.ceil(measure:GetStringWidth()) + 2
+	measure:Hide()
+	local gap = 4
+	local labelW = colW - valueW - deltaW - 2 * gap - 6
 	for i = 1, PrePick.STAT_COLS * 2 do
 		local col, line = (i - 1) % PrePick.STAT_COLS, math.floor((i - 1) / PrePick.STAT_COLS)
-		local fs = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		fs:SetPoint("TOPLEFT", row.Name, "BOTTOMLEFT", col * colW, -2 - line * 13)
-		fs:SetWidth(colW - 4)
-		fs:SetJustifyH("LEFT")
-		row.Cells[i] = fs
+		local x, y = col * colW, -2 - line * 13
+		local label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		label:SetPoint("TOPLEFT", row.Name, "BOTTOMLEFT", x, y)
+		label:SetSize(labelW, 12)
+		label:SetJustifyH("LEFT")
+		label:SetWordWrap(false)
+		label:SetTextColor(0.69, 0.69, 0.69)
+		local value = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		value:SetPoint("TOPLEFT", label, "TOPRIGHT", gap, 0)
+		value:SetSize(valueW, 12)
+		value:SetJustifyH("RIGHT")
+		local delta = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		delta:SetPoint("TOPLEFT", value, "TOPRIGHT", gap, 0)
+		delta:SetSize(deltaW, 12)
+		delta:SetJustifyH("LEFT")
+		row.Cells[i] = { label = label, value = value, delta = delta }
 	end
 	-- Hidden alternative when there is nothing to compare: the engine's reason text.
 	row.Info = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -250,11 +271,27 @@ local function FormatDelta(d)
 	return " |cff808080=|r"
 end
 
+local function FormatValue(v)
+	if type(v) == "number" and v ~= math.floor(v) then return string.format("%.1f", v) end
+	return tostring(v)
+end
+
+-- Fills one three-part cell; hides it when there is no entry.
+local function FillCell(cell, entry)
+	if not entry then
+		cell.label:Hide(); cell.value:Hide(); cell.delta:Hide()
+		return
+	end
+	cell.label:SetText(tostring(entry.label))
+	cell.value:SetText(FormatValue(entry.value))
+	cell.delta:SetText((FormatDelta(entry.delta):gsub("^ ", "")))
+	cell.label:Show(); cell.value:Show(); cell.delta:Show()
+end
+
+-- One-string form (chat / debug).
 local function FormatCell(entry)
 	if not entry then return "" end
-	local v = entry.value
-	if type(v) == "number" and v ~= math.floor(v) then v = string.format("%.1f", v) end
-	return string.format("|cffb0b0b0%s|r %s%s", tostring(entry.label), tostring(v), FormatDelta(entry.delta))
+	return string.format("|cffb0b0b0%s|r %s%s", tostring(entry.label), FormatValue(entry.value), FormatDelta(entry.delta))
 end
 
 --------------------------------------------------------------------------------
@@ -309,13 +346,10 @@ function PrePick.Render()
 			-- engine's reason line otherwise (hard to value, cannot wear...).
 			local deltas = c.wearable and PrePick.StatDeltas(c, player) or nil
 			if deltas and #deltas > 0 then
-				for j, cell in ipairs(row.Cells) do
-					cell:SetText(FormatCell(deltas[j]))
-					cell:Show()
-				end
+				for j, cell in ipairs(row.Cells) do FillCell(cell, deltas[j]) end
 				row.Info:Hide()
 			else
-				for _, cell in ipairs(row.Cells) do cell:Hide() end
+				for _, cell in ipairs(row.Cells) do FillCell(cell, nil) end
 				row.Info:SetText(Engine.ItemReasonText(c))
 				row.Info:Show()
 			end
