@@ -398,6 +398,7 @@ function NS.DebugReport()
 	NS.Print("QuestAutomator %s | client %s (%s, %s) | interface %s | locale %s | WOW_PROJECT_ID=%s",
 		tostring(NS.version), tostring(version), tostring(build), tostring(buildDate),
 		tostring(interface), tostring(GetLocale()), tostring(WOW_PROJECT_ID))
+	if NS.Client and NS.Client.DebugReport then NS.Client.DebugReport() end
 	NS.Print("APIs:")
 	for _, path in ipairs(NS.SortedKeys(NS.features)) do
 		NS.Print("  %s %s", NS.features[path] and "|cff40ff40ok|r     " or "|cffff4040missing|r", path)

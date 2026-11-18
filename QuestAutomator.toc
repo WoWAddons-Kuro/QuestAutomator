@@ -18,6 +18,7 @@
 Locales\enUS.lua
 Locales\zhCN.lua
 Core.lua
+Client.lua
 Rules.lua
 Rewards.lua
 Automation.lua

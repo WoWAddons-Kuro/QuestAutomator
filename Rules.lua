@@ -219,52 +219,18 @@ function Rules.PreferredWeaponCategory(class, talents)
 	return nil
 end
 
--- Points spent per talent tree of the active combat configuration. Forever runs
--- vanilla-style trees on the retail trait system: the active spec group's config
--- (C_SpecializationInfo.GetCombatConfigIDForSpecGroup, as Camelot's
--- ClassTalentsFrame:SetTab does) has one tree whose three "groups"
--- (C_Traits.GetGroupDisplayInfoByTreeID) are the trees, and
--- C_Traits.GetGroupCurrencyInfo reports the points spent in each (the number the
--- tree headers show). Survival is the group with skill line 51, else the third
--- group in display order. survivalDominant: more points there than in any other tree.
+-- Points spent per talent tree, read through the client adapter (Forever: the
+-- retail trait system; Era: C_SpecializationInfo tabs). Survival is the group
+-- with skill line 51 when the client reports skill lines, else the third group
+-- in display order. survivalDominant: more points there than in any other tree.
 function Rules.Talents()
-	local result = { groups = {}, source = "none" }
-	local group = NS.SafeNumber(NS.Call("C_SpecializationInfo.GetActiveSpecGroup")) or 1
-	local configID = NS.SafeNumber(NS.Call("C_SpecializationInfo.GetCombatConfigIDForSpecGroup", group))
-		or NS.SafeNumber(NS.Call("C_ClassTalents.GetActiveConfigID"))
-	if not configID then return result end
-	local configInfo = NS.Call("C_Traits.GetConfigInfo", configID)
-	local treeID = type(configInfo) == "table" and type(configInfo.treeIDs) == "table" and NS.SafeNumber(configInfo.treeIDs[1]) or nil
-	if not treeID then return result end
-	local displayInfos = NS.Call("C_Traits.GetGroupDisplayInfoByTreeID", treeID)
-	if type(displayInfos) ~= "table" or #displayInfos == 0 then return result end
-	local groupIDs = {}
-	for _, info in ipairs(displayInfos) do
-		local id = NS.SafeNumber(info.groupID)
-		if id then groupIDs[#groupIDs + 1] = id end
-	end
-	local spentByGroup = {}
-	local currencyInfos = NS.Call("C_Traits.GetGroupCurrencyInfo", configID, groupIDs)
-	for _, groupInfo in ipairs(type(currencyInfos) == "table" and currencyInfos or {}) do
-		local currency = type(groupInfo.currencyInfos) == "table" and groupInfo.currencyInfos[1] or nil
-		local id = NS.SafeNumber(groupInfo.traitNodeGroupID)
-		if id then spentByGroup[id] = currency and NS.SafeNumber(currency.spent) or 0 end
-	end
-	for i, info in ipairs(displayInfos) do
-		result.groups[#result.groups + 1] = {
-			name = NS.SafeString(info.displayName),
-			skillLineID = NS.SafeNumber(info.skillLineID),
-			orderIndex = NS.SafeNumber(info.orderIndex) or i,
-			spent = spentByGroup[NS.SafeNumber(info.groupID) or 0] or 0,
-		}
-	end
-	table.sort(result.groups, function(a, b) return a.orderIndex < b.orderIndex end)
-	result.source = "traits"
+	local result = NS.Client.TalentGroups()
+	if result.source == "none" or #result.groups == 0 then return result end
 	local survival
 	for _, g in ipairs(result.groups) do
 		if g.skillLineID == Rules.SURVIVAL_SKILL_LINE then survival = g end
 	end
-	survival = survival or result.groups[3]
+	survival = survival or result.groups[NS.Client.SURVIVAL_TAB_INDEX]
 	if survival then
 		local dominant = survival.spent > 0
 		for _, g in ipairs(result.groups) do

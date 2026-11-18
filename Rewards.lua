@@ -36,11 +36,11 @@ function Rewards.LogSource(questID)
 	return {
 		name = "log",
 		questID = questID,
-		Count = function() return NS.Call("GetNumQuestLogChoices", questID) end,
+		Count = function() return NS.Client.LogChoiceCount(questID) end,
 		LootType = function() return Rewards.LOOT_ITEM end,
-		Info = function(i) return NS.Call("GetQuestLogChoiceInfo", i, questID) end,
+		Info = function(i) return NS.Client.LogChoiceInfo(i, questID) end,
 		Link = function(i) return NS.Call("GetQuestLogItemLink", "choice", i) end,
-		Tooltip = function(i) return NS.Call("C_TooltipInfo.GetQuestLogItem", "choice", i, questID) end,
+		Tooltip = function(i) return NS.Client.LogChoiceTooltip(i, questID) end,
 	}
 end
 
@@ -200,22 +200,7 @@ end
 -- names (retail behaviour; unverified on Forever, hence the tooltip fallback).
 function Rewards.StatsFromAPI(link)
 	if not link then return nil end
-	local t = NS.Call("C_Item.GetItemStats", link)
-	if type(t) ~= "table" then return nil end
-	local stats, any = {}, false
-	for k, v in pairs(t) do
-		k, v = NS.SafeString(k), NS.SafeNumber(v)
-		if k and v then
-			local key = k:match("^ITEM_MOD_(.+)_SHORT$") or k:match("^ITEM_MOD_(.+)$")
-			if k == "RESISTANCE0_NAME" then key = "ARMOR" end
-			if key then
-				stats[key] = (stats[key] or 0) + v
-				any = true
-			end
-		end
-	end
-	if any then return stats end
-	return nil
+	return NS.Client.ItemStats(link)
 end
 
 function Rewards.StatsFromTooltip(index, kind)

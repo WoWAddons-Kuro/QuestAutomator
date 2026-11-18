@@ -108,24 +108,15 @@ function Glow.Shown()
 end
 
 --------------------------------------------------------------------------------
--- What Blizzard's QuestInfoFrame is showing, and what the automation would do.
+-- What reward panel is on screen (client adapter), and what the automation would do.
 --------------------------------------------------------------------------------
 local function Context()
-	local info = QuestInfoFrame
-	if type(info) ~= "table" then return nil end
-	local rewardsFrame = info.rewardsFrame
-	if type(rewardsFrame) ~= "table" or type(rewardsFrame.RewardButtons) ~= "table" then return nil end
-	local questID, source
-	if info.questLog then
-		questID = NS.SafeNumber(NS.Call("C_QuestLog.GetSelectedQuest"))
-		if not questID or questID == 0 then return nil end
-		source = Rewards.LogSource(questID)
-	else
-		questID = NS.SafeNumber(NS.Call("GetQuestID"))
-		if questID == 0 then questID = nil end
-		source = Rewards.OFFER
-	end
-	return { rewardsFrame = rewardsFrame, questID = questID, source = source, questLog = info.questLog and true or false }
+	-- { questID, questLog, buttons (choice item buttons with :GetID()), frame, source }
+	-- from the client adapter; nil when no reward panel is on screen.
+	local ctx = NS.Client.RewardContext()
+	if not ctx then return nil end
+	ctx.rewardsFrame = ctx.frame
+	return ctx
 end
 
 local function FrameShown(frame)
@@ -141,7 +132,7 @@ function Glow.Decide(ctx)
 	if not (s.enabled and s.turnIn) then return nil, "off" end
 	if NS.Auto and NS.Auto.SessionPaused() then return nil, "paused" end
 	local questID = ctx.questID
-	local repeatable = questID and NS.SafeBool(NS.Call("C_QuestLog.IsRepeatableQuest", questID)) or false
+	local repeatable = questID and NS.Client.IsQuestRepeatable(questID) or false
 	local ok, why = NS.Auto.MayTurnIn(questID, repeatable)
 	if not ok then return nil, why end
 	local n = NS.SafeNumber(ctx.source.Count()) or 0
@@ -153,12 +144,10 @@ function Glow.Decide(ctx)
 	return decision, "pick", choices, decision
 end
 
-local function FindButton(rewardsFrame, index)
-	for _, button in ipairs(rewardsFrame.RewardButtons) do
-		if type(button) == "table" and FrameShown(button) and button.type == "choice" and button.objectType == "item" then
-			local ok, id = pcall(button.GetID, button)
-			if ok and id == index then return button end
-		end
+local function FindButton(ctx, index)
+	for _, button in ipairs(ctx.buttons or {}) do
+		local ok, id = pcall(button.GetID, button)
+		if ok and id == index then return button end
 	end
 	return nil
 end
@@ -184,7 +173,7 @@ function Glow.Refresh(attempt)
 		NS.After(Glow.RETRY_DELAY, function() Glow.Retry(generation) end)
 		return nil
 	end
-	local button = FindButton(ctx.rewardsFrame, decision.index)
+	local button = FindButton(ctx, decision.index)
 	if not button then return nil end
 	ShowGlow(button)
 	state.decision = decision
@@ -211,7 +200,8 @@ function Glow.OnSettingsChanged()
 end
 
 --------------------------------------------------------------------------------
--- Hook. Mainline\QuestInfo.lua lays a panel out with QuestInfo_Display(template, ...),
+-- Hook (names from the client adapter: QuestInfo_Display, QuestInfo_ShowRewards, and on
+-- Era QuestFrameItems_Update for the quest log). QuestInfo.lua lays a panel out with QuestInfo_Display(template, ...),
 -- which walks template.elements and calls each entry; the templates
 -- (QUEST_TEMPLATE_DETAIL, _LOG, _REWARD, _MAP_REWARDS) hold QuestInfo_ShowRewards as a
 -- function *value*, so a hook on that global name never runs for a template-driven
@@ -232,7 +222,7 @@ function Glow.Install()
 		return false
 	end
 	local any = false
-	for _, name in ipairs({ "QuestInfo_Display", "QuestInfo_ShowRewards" }) do
+	for _, name in ipairs(NS.Client.RewardLayoutHooks()) do
 		if type(_G[name]) == "function" then
 			hooksecurefunc(name, OnLayout)
 			NS.features[name] = true
@@ -302,7 +292,7 @@ function Glow.Explain()
 		NS.Print(L["No quest rewards are on screen. Open a quest in the log or talk to a quest giver, then try again."])
 		return false
 	end
-	local title = ctx.questID and NS.SafeString(NS.Call("C_QuestLog.GetTitleForQuestID", ctx.questID)) or nil
+	local title = ctx.questID and NS.Client.QuestTitle(ctx.questID) or nil
 	if not title or title == "" then title = NS.SafeString(NS.Call("GetTitleText")) end
 	if not title or title == "" then title = ctx.questID and ("#" .. ctx.questID) or "?" end
 	NS.Print(L["Rewards of %s (%s):"], title, ctx.questLog and L["quest log"] or L["quest giver"])
