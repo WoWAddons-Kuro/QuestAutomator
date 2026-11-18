@@ -123,7 +123,7 @@ local function EraWithLogSelection(questID, fn)
 	if previous ~= index then SafeCall("SelectQuestLogEntry", index) end
 	local results = { fn() }
 	if previous and previous ~= index then SafeCall("SelectQuestLogEntry", previous) end
-	return unpack(results, 1, table.maxn(results))
+	return unpack(results)
 end
 function Era.QuestRewardXP(questID)
 	-- The Era global reads the *selected* log entry: select, read, restore.
