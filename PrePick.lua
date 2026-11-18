@@ -16,7 +16,7 @@ NS.PrePick = PrePick
 
 PrePick.FRAME_NAME = "QuestAutomatorPrePickFrame"
 PrePick.ICON_SIZE = 36
-PrePick.ROW_HEIGHT = 64        -- icon + name line + two stat-delta lines
+PrePick.ROW_HEIGHT = 54        -- name line (14) + 2 grid lines (13 each) + spacing
 PrePick.WIDTH = 360
 PrePick.STAT_COLS = 2          -- stat deltas laid out in this many columns
 PrePick.OPEN_DELAY = 0.3   -- seconds after QUEST_ACCEPTED before the log is read
@@ -137,8 +137,9 @@ local function BuildRow(index)
 	row.Border:Hide()
 
 	row.Name = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	row.Name:SetPoint("TOPLEFT", row.Icon, "TOPRIGHT", 8, -2)
+	row.Name:SetPoint("TOPLEFT", row, "TOPLEFT", PrePick.ICON_SIZE + 8, 0)
 	row.Name:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+	row.Name:SetHeight(14)
 	row.Name:SetJustifyH("LEFT")
 
 	-- Stat delta grid under the name: STAT_COLS columns, each a fixed layout of
@@ -158,23 +159,28 @@ local function BuildRow(index)
 	measure:Hide()
 	local gap = 4
 	local labelW = colW - valueW - deltaW - 2 * gap - 8
-	local nameTop = -(2 + 14)  -- below the name line
+	-- Rows of the grid hang off the Name's bottom edge (so they always clear it);
+	-- only the x offsets are fixed against the row.
+	local lineH = 13
 	for i = 1, PrePick.STAT_COLS * 2 do
 		local col, line = (i - 1) % PrePick.STAT_COLS, math.floor((i - 1) / PrePick.STAT_COLS)
 		local x0 = gridLeft + col * colW
-		local y = nameTop - 2 - line * 13
+		local y = -3 - line * lineH
 		local label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		label:SetPoint("TOPLEFT", row, "TOPLEFT", x0, y)
+		label:SetPoint("TOP", row.Name, "BOTTOM", 0, y)
+		label:SetPoint("LEFT", row, "LEFT", x0, 0)
 		label:SetSize(labelW, 12)
 		label:SetJustifyH("LEFT")
 		label:SetWordWrap(false)
 		label:SetTextColor(0.69, 0.69, 0.69)
 		local value = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		value:SetPoint("TOPLEFT", row, "TOPLEFT", x0 + labelW + gap, y)
+		value:SetPoint("TOP", row.Name, "BOTTOM", 0, y)
+		value:SetPoint("LEFT", row, "LEFT", x0 + labelW + gap, 0)
 		value:SetSize(valueW, 12)
 		value:SetJustifyH("RIGHT")
 		local delta = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		delta:SetPoint("TOPLEFT", row, "TOPLEFT", x0 + labelW + gap + valueW + gap, y)
+		delta:SetPoint("TOP", row.Name, "BOTTOM", 0, y)
+		delta:SetPoint("LEFT", row, "LEFT", x0 + labelW + gap + valueW + gap, 0)
 		delta:SetSize(deltaW, 12)
 		delta:SetJustifyH("LEFT")
 		row.Cells[i] = { label = label, value = value, delta = delta }
