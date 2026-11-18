@@ -184,15 +184,19 @@ local function Build()
 
 	-- Master switch directly under the intro.
 	Place(Check(content, "enabled", L["Enable the automation"], L["Master switch. Holding the pause key while talking to an NPC pauses everything for that conversation."]), -14)
+	Place(Check(content, "minimap", L["Minimap button"], L["Show the button on the minimap. Left-click switches the automation on or off, right-click opens the menu, drag moves it."],
+		function(value) if NS.ShowMinimapButton then NS.ShowMinimapButton(value) end end), -2)
 
-	-- Section: Quests
-	local q = Section(L["Quests"])
+	-- Section: Quest dialog automation
+	local q = Section(L["Quest Dialog Automation"])
 	q:Add(Check(q, "accept", L["Accept quests"], L["Take every quest an NPC offers, except the kinds excluded below."]), 26)
 	q:Add(Check(q, "acceptTrivial", L["Also accept low-level quests"], L["Low-level (grey) quests are skipped unless this is on."]), 26, -2, 20)
 	q:Add(Check(q, "acceptRepeatable", L["Also accept daily and repeatable quests"], L["Daily, weekly and repeatable quests are skipped unless this is on."]), 26, -2)
 	q:Add(Check(q, "confirmPartyQuests", L["Accept escorts started by the party"], L["Answer the confirmation pop-up that appears when a party member starts an escort quest."]), 26, -2)
 	q:Add(Check(q, "turnIn", L["Hand in quests"], L["Hand in every completed quest and take its reward as configured below. Quests that cost money are always left to you."]), 26, -8, -20)
 	q:Add(Check(q, "turnInRepeatable", L["Also hand in daily and repeatable quests"], L["Repeatable quests usually consume items from your bags; they are left to you unless this is on."]), 26, -2, 20)
+	q:Add(RadioRow(q, "modifier", L["Pause key"], NS.MODIFIERS, { SHIFT = "Shift", CTRL = "Ctrl", ALT = "Alt", NONE = L["none"] },
+		L["Hold this key while talking to an NPC to do that conversation by hand."], { labelWidth = 160 }), 20, -8, -20)
 	q:Finish()
 
 	-- Section: Reward tiers
@@ -238,12 +242,10 @@ local function Build()
 	-- Section: Pre-pick and feedback
 	local p = Section(L["Pre-pick and feedback"])
 	p:Add(Check(p, "prePickUI", L["Ask me when I accept a quest"], L["When a quest you accept has a reward the addon would only recommend, show the choices right away so the hand-in can still be automatic."]), 26)
-	p:Add(Check(p, "announce", L["Announcements"], L["Print a chat line for every quest accepted, handed in and reward chosen."]), 26, -2)
+	p:Add(Check(p, "prePickUnlocked", L["Unlock and show the pick window (drag it, then untick)"], L["Shows the pick window with sample rewards so you can drag it where you want it. The position is remembered; untick to lock it again."],
+		function(value) if NS.PrePick and NS.PrePick.SetUnlocked then NS.PrePick.SetUnlocked(value) end end), 26, -2, 20)
+	p:Add(Check(p, "announce", L["Chat messages for quests accepted, handed in and rewards chosen"], L["Print a chat line for every quest accepted, handed in and reward chosen."]), 26, -8, -20)
 	p:Add(Check(p, "xpBar", L["Completed quests on the experience bar"]), 26, -2)
-	p:Add(Check(p, "minimap", L["Minimap button"], L["Show the button on the minimap. Left-click switches the automation on or off, right-click opens the menu, drag moves it."],
-		function(value) if NS.ShowMinimapButton then NS.ShowMinimapButton(value) end end), 26, -2)
-	p:Add(RadioRow(p, "modifier", L["Pause key"], NS.MODIFIERS, { SHIFT = "Shift", CTRL = "Ctrl", ALT = "Alt", NONE = L["none"] },
-		L["Hold this key while talking to an NPC to do that conversation by hand."], { labelWidth = 160 }), 20, -8)
 	p:Finish()
 
 	local function LayoutContentHeight()

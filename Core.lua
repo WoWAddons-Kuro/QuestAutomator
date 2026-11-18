@@ -185,6 +185,7 @@ NS.DEFAULT_SETTINGS = {
 	weaponProficiency = "learnable", -- "learnable" (the class can train it) or "usable" (the character has the skill)
 	valueSource = "vendor",    -- "vendor" | "auction" | "disenchant" (the latter two fall back to vendor without a provider)
 	prePickUI = true,          -- show the pick window when a quest with a recommend-tier reward is accepted
+	prePickUnlocked = false,   -- preview mode: the pick window is shown with sample rows and can be dragged (PrePick.lua)
 	manualQuality = 3,         -- a reward of this quality or better is left to the player (-1 = never); 3 = Rare
 	modifier = "SHIFT",        -- key that pauses the automation while held: SHIFT, CTRL, ALT, NONE
 	announce = true,           -- chat line for every quest accepted, handed in and reward chosen

@@ -45,20 +45,41 @@ function PrePick.Clear(questID)
 	if store and questID then store[questID] = nil end
 end
 
+-- Window position, account-wide: settings.prePickPos = { point, x, y }.
+function PrePick.SavePosition()
+	if not frame or not NS.db then return end
+	local point, _, _, x, y = frame:GetPoint(1)
+	if point then NS.db.settings.prePickPos = { point = point, x = x, y = y } end
+end
+
+function PrePick.RestorePosition()
+	if not frame then return end
+	frame:ClearAllPoints()
+	local pos = NS.db and NS.db.settings.prePickPos
+	if type(pos) == "table" and pos.point then
+		frame:SetPoint(pos.point, UIParent, pos.point, pos.x or 0, pos.y or 0)
+	else
+		frame:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
+	end
+end
+
 --------------------------------------------------------------------------------
 -- The frame.
 --------------------------------------------------------------------------------
 local function BuildFrame()
 	local f = CreateFrame("Frame", PrePick.FRAME_NAME, UIParent, "BackdropTemplate")
 	f:SetSize(PrePick.WIDTH, 120)
-	f:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
 	f:SetFrameStrata("DIALOG")
 	f:SetMovable(true)
 	f:EnableMouse(true)
 	f:RegisterForDrag("LeftButton")
-	f:SetScript("OnDragStart", f.StartMoving)
-	f:SetScript("OnDragStop", f.StopMovingOrSizing)
+	-- Dragging only while unlocked (preview mode), so a hurried click at hand-in
+	-- cannot move the window by accident. Position is kept in settings.prePickPos.
+	f:SetScript("OnDragStart", function(self) if NS.db.settings.prePickUnlocked then self:StartMoving() end end)
+	f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing(); PrePick.SavePosition() end)
 	f:SetClampedToScreen(true)
+	frame = f
+	PrePick.RestorePosition()
 	if f.SetBackdrop then
 		f:SetBackdrop({
 			bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -152,16 +173,20 @@ end
 --------------------------------------------------------------------------------
 function PrePick.Hide()
 	if frame then frame:Hide() end
-	state.questID, state.choices, state.decision = nil, nil, nil
+	state.questID, state.choices, state.decision, state.preview = nil, nil, nil, nil
 end
 
 -- Lays the current state out. Called by Open and when a pick changes.
 function PrePick.Render()
 	if not frame or not state.questID or not state.choices then return end
-	local title = NS.Client.QuestTitle(state.questID) or ("#" .. state.questID)
+	local title = state.preview and L["Sample quest"] or (NS.Client.QuestTitle(state.questID) or ("#" .. state.questID))
 	frame.Title:SetText(string.format(L["Reward for %s"], title))
 	local decision = state.decision
-	frame.Reason:SetText(decision and Engine.LeaveReasonText(decision) or "")
+	if state.preview then
+		frame.Reason:SetText(L["Preview: drag me into place, then untick the setting to lock."])
+	else
+		frame.Reason:SetText(decision and Engine.LeaveReasonText(decision) or "")
+	end
 	local picked = PrePick.Get(state.questID)
 	local y = -52
 	local shown = 0
@@ -172,7 +197,7 @@ function PrePick.Render()
 			row.choice = c
 			row:ClearAllPoints()
 			row:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, y)
-			row.Icon:SetTexture(IconFor(c))
+			row.Icon:SetTexture((c.icon or IconFor(c)))
 			local colors = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[c.quality or 1]
 			local hex = colors and colors.hex or "|cffffffff"
 			local isPicked = picked ~= nil and c.itemID == picked
@@ -192,6 +217,7 @@ end
 -- The player clicked a reward: remember it (toggle off when clicked again).
 function PrePick.Choose(c)
 	if not c or not state.questID then return end
+	if state.preview then return end
 	if PrePick.Get(state.questID) == c.itemID then
 		PrePick.Clear(state.questID)
 		NS.Print(L["Pre-pick cleared for %s."], NS.Client.QuestTitle(state.questID) or state.questID)
@@ -204,6 +230,36 @@ function PrePick.Choose(c)
 	end
 	PrePick.Render()
 end
+
+-- Evaluates the log rewards of questID; opens the window when the engine would only
+--------------------------------------------------------------------------------
+-- Preview (unlocked) mode: the settings checkbox "Unlock and show the pick window"
+-- shows the window with sample rows so the player can drag it into place. No quest
+-- is involved: clicks do nothing, the title says so, and hiding it re-locks.
+--------------------------------------------------------------------------------
+local SAMPLE_ROWS = {
+	{ index = 1, lootType = 0, name = "Sample Sword", quality = 2, itemLevel = 22, loaded = true, wearable = true, worn = { itemLevel = 18 }, delta = 4, isUpgrade = true, hardToValue = false, icon = "Interface\\Icons\\INV_Sword_04" },
+	{ index = 2, lootType = 0, name = "Sample Trinket", quality = 3, itemLevel = 22, loaded = true, wearable = true, hardToValue = true, hardReason = "trinket", icon = "Interface\\Icons\\INV_Misc_OrbOfDeception" },
+	{ index = 3, lootType = 0, name = "Sample Cloak", quality = 2, itemLevel = 20, loaded = true, wearable = true, worn = { itemLevel = 20 }, delta = 0, isSidegrade = true, hardToValue = false, icon = "Interface\\Icons\\INV_Misc_Cape_11" },
+}
+
+function PrePick.SetUnlocked(unlocked)
+	if unlocked then
+		if not frame then frame = BuildFrame() end
+		state.questID, state.choices, state.preview = -1, SAMPLE_ROWS, true
+		state.decision = { tier = "1", action = "recommend", index = 1, reason = "trinket" }
+		PrePick.Render()
+	elseif state.preview then
+		PrePick.Hide()
+	end
+end
+
+-- When the settings page sets the flag directly (slash, reload), follow it.
+NS.RegisterEvent("PLAYER_LOGIN", function()
+	if NS.db and NS.db.settings.prePickUnlocked then
+		NS.After(1, function() PrePick.SetUnlocked(true) end)
+	end
+end)
 
 -- Evaluates the log rewards of questID; opens the window when the engine would only
 -- recommend (or when force is set, e.g. /qam pick). Retries while item data loads.
