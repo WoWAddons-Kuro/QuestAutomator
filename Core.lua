@@ -428,6 +428,7 @@ function NS.DebugReport()
 	if NS.Rules and NS.Rules.DebugReport then NS.Rules.DebugReport() end
 	if NS.Auto and NS.Auto.DebugReport then NS.Auto.DebugReport() end
 	if NS.Glow and NS.Glow.DebugReport then NS.Glow.DebugReport() end
+	if NS.PrePick and NS.PrePick.DebugReport then NS.PrePick.DebugReport() end
 	if NS.XPBar and NS.XPBar.DebugReport then NS.XPBar.DebugReport() end
 	NS.Print("SavedVariables: account data from %s file, character data from %s file, character key %s, log entries %d",
 		tostring(NS.svSource), tostring(NS.charSource), tostring(NS.CharKey()), NS.db and #NS.db.log or 0)

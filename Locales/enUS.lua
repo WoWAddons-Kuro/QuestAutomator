@@ -243,3 +243,13 @@ L["/qam value vendor|auction|disenchant - what most valuable means"] = "/qam val
 L["/qam prepick on|off - ask when a quest is accepted; /qam pick - open the pick window for the selected quest"] = "/qam prepick on|off - ask when a quest is accepted; /qam pick - open the pick window for the selected quest"
 L["Auto: %s"] = "Auto: %s"
 L["recommend only"] = "recommend only"
+
+-- Pre-pick window (PrePick.lua)
+L["Reward for %s"] = "Reward for %s"
+L["Decide at hand-in"] = "Decide at hand-in"
+L["(your pick)"] = "(your pick)"
+L["(suggested)"] = "(suggested)"
+L["Pre-pick cleared for %s."] = "Pre-pick cleared for %s."
+L["Pre-pick for %s: %s. It will be taken automatically at hand-in."] = "Pre-pick for %s: %s. It will be taken automatically at hand-in."
+L["%s has no reward to choose."] = "%s has no reward to choose."
+L["Select a quest in the log (or give its ID), then /qam pick."] = "Select a quest in the log (or give its ID), then /qam pick."

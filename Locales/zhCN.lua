@@ -256,3 +256,13 @@ L["/qam value vendor|auction|disenchant - what most valuable means"] = "/qam val
 L["/qam prepick on|off - ask when a quest is accepted; /qam pick - open the pick window for the selected quest"] = "/qam prepick on|off - 接任务时询问；/qam pick - 为选中的任务打开预选窗口"
 L["Auto: %s"] = "自动：%s"
 L["recommend only"] = "仅推荐"
+
+-- Pre-pick window (PrePick.lua)
+L["Reward for %s"] = "%s 的奖励"
+L["Decide at hand-in"] = "交付时再决定"
+L["(your pick)"] = "（你的选择）"
+L["(suggested)"] = "（建议）"
+L["Pre-pick cleared for %s."] = "已清除 %s 的预选。"
+L["Pre-pick for %s: %s. It will be taken automatically at hand-in."] = "%s 的预选：%s。交付时将自动领取。"
+L["%s has no reward to choose."] = "%s 没有需要选择的奖励。"
+L["Select a quest in the log (or give its ID), then /qam pick."] = "请先在任务日志中选中一个任务（或给出其 ID），再输入 /qam pick。"

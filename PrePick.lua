@@ -1,0 +1,273 @@
+-- QuestAutomator: the pre-pick window (spec §6.4). When a quest is accepted whose
+-- reward choice the engine would only recommend (a trinket, a rare, several
+-- upgrades...), the choices are shown right away so the player can decide while
+-- the quest text is fresh. The pick is remembered per character by quest ID and
+-- *item ID* (never by index, so a reordered reward list cannot misfire) and turns
+-- the hand-in into an automatic one. Cleared when the quest is handed in or dropped.
+--
+-- The window reads the quest log's reward list for the accepted quest through the
+-- client adapter (Rewards.LogSource) a moment after QUEST_ACCEPTED, when the log
+-- entry exists. Nothing is written into Blizzard's frames.
+local ADDON, NS = ...
+local L = NS.L
+local Rules, Rewards, Engine = NS.Rules, NS.Rewards, NS.Engine
+local PrePick = {}
+NS.PrePick = PrePick
+
+PrePick.FRAME_NAME = "QuestAutomatorPrePickFrame"
+PrePick.ICON_SIZE = 40
+PrePick.ROW_HEIGHT = 46
+PrePick.WIDTH = 320
+PrePick.OPEN_DELAY = 0.3   -- seconds after QUEST_ACCEPTED before the log is read
+PrePick.MAX_LOAD_TRIES = 6
+PrePick.RETRY_DELAY = 0.5
+
+local frame, rows = nil, {}
+local state = { questID = nil, choices = nil, decision = nil, attempt = 0 }
+PrePick.state = state
+
+--------------------------------------------------------------------------------
+-- Storage: chardb.prePicks[questID] = itemID
+--------------------------------------------------------------------------------
+function PrePick.Get(questID)
+	local store = NS.chardb and NS.chardb.prePicks
+	return store and questID and store[questID] or nil
+end
+
+function PrePick.Set(questID, itemID)
+	local store = NS.chardb and NS.chardb.prePicks
+	if not store or not questID then return end
+	store[questID] = itemID
+end
+
+function PrePick.Clear(questID)
+	local store = NS.chardb and NS.chardb.prePicks
+	if store and questID then store[questID] = nil end
+end
+
+--------------------------------------------------------------------------------
+-- The frame.
+--------------------------------------------------------------------------------
+local function BuildFrame()
+	local f = CreateFrame("Frame", PrePick.FRAME_NAME, UIParent, "BackdropTemplate")
+	f:SetSize(PrePick.WIDTH, 120)
+	f:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
+	f:SetFrameStrata("DIALOG")
+	f:SetMovable(true)
+	f:EnableMouse(true)
+	f:RegisterForDrag("LeftButton")
+	f:SetScript("OnDragStart", f.StartMoving)
+	f:SetScript("OnDragStop", f.StopMovingOrSizing)
+	f:SetClampedToScreen(true)
+	if f.SetBackdrop then
+		f:SetBackdrop({
+			bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+			edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+			tile = true, tileSize = 32, edgeSize = 32,
+			insets = { left = 11, right = 12, top = 12, bottom = 11 },
+		})
+	end
+
+	f.Title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	f.Title:SetPoint("TOP", f, "TOP", 0, -16)
+	f.Title:SetWidth(PrePick.WIDTH - 40)
+	f.Title:SetJustifyH("CENTER")
+
+	f.Reason = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	f.Reason:SetPoint("TOP", f.Title, "BOTTOM", 0, -4)
+	f.Reason:SetWidth(PrePick.WIDTH - 40)
+	f.Reason:SetJustifyH("CENTER")
+
+	f.Close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+	f.Close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -5, -5)
+
+	f.Later = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+	f.Later:SetSize(120, 22)
+	f.Later:SetPoint("BOTTOM", f, "BOTTOM", 0, 14)
+	f.Later:SetText(L["Decide at hand-in"])
+	f.Later:SetScript("OnClick", function() PrePick.Hide() end)
+
+	f:Hide()
+	return f
+end
+
+local function BuildRow(index)
+	local row = CreateFrame("Button", nil, frame)
+	row:SetSize(PrePick.WIDTH - 40, PrePick.ROW_HEIGHT)
+	row:RegisterForClicks("LeftButtonUp")
+
+	row.Icon = row:CreateTexture(nil, "ARTWORK")
+	row.Icon:SetSize(PrePick.ICON_SIZE, PrePick.ICON_SIZE)
+	row.Icon:SetPoint("LEFT", row, "LEFT", 0, 0)
+	row.Icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+
+	row.Border = row:CreateTexture(nil, "OVERLAY")
+	row.Border:SetSize(PrePick.ICON_SIZE * 1.7, PrePick.ICON_SIZE * 1.7)
+	row.Border:SetPoint("CENTER", row.Icon, "CENTER", 0, 0)
+	row.Border:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+	row.Border:SetBlendMode("ADD")
+	row.Border:SetVertexColor(1, 0.85, 0.3)
+	row.Border:Hide()
+
+	row.Name = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	row.Name:SetPoint("TOPLEFT", row.Icon, "TOPRIGHT", 8, -2)
+	row.Name:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+	row.Name:SetJustifyH("LEFT")
+
+	row.Info = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	row.Info:SetPoint("TOPLEFT", row.Name, "BOTTOMLEFT", 0, -2)
+	row.Info:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+	row.Info:SetJustifyH("LEFT")
+
+	row.Highlight = row:CreateTexture(nil, "HIGHLIGHT")
+	row.Highlight:SetAllPoints(row)
+	row.Highlight:SetColorTexture(1, 1, 1, 0.08)
+
+	row:SetScript("OnClick", function(self) PrePick.Choose(self.choice) end)
+	row:SetScript("OnEnter", function(self)
+		if self.choice and self.choice.link and GameTooltip then
+			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+			GameTooltip:SetHyperlink(self.choice.link)
+			GameTooltip:Show()
+		end
+	end)
+	row:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+	return row
+end
+
+local function Row(index)
+	if not rows[index] then rows[index] = BuildRow(index) end
+	return rows[index]
+end
+
+local function IconFor(c)
+	local ref = c.link or c.itemID
+	if not ref then return "Interface\\Icons\\INV_Misc_QuestionMark" end
+	local _, _, _, _, icon = NS.Call("C_Item.GetItemInfoInstant", ref)
+	return icon or "Interface\\Icons\\INV_Misc_QuestionMark"
+end
+
+--------------------------------------------------------------------------------
+-- Show / hide.
+--------------------------------------------------------------------------------
+function PrePick.Hide()
+	if frame then frame:Hide() end
+	state.questID, state.choices, state.decision = nil, nil, nil
+end
+
+-- Lays the current state out. Called by Open and when a pick changes.
+function PrePick.Render()
+	if not frame or not state.questID or not state.choices then return end
+	local title = NS.Client.QuestTitle(state.questID) or ("#" .. state.questID)
+	frame.Title:SetText(string.format(L["Reward for %s"], title))
+	local decision = state.decision
+	frame.Reason:SetText(decision and Engine.LeaveReasonText(decision) or "")
+	local picked = PrePick.Get(state.questID)
+	local y = -52
+	local shown = 0
+	for i, c in ipairs(state.choices) do
+		if c.lootType == Rewards.LOOT_ITEM then
+			shown = shown + 1
+			local row = Row(shown)
+			row.choice = c
+			row:ClearAllPoints()
+			row:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, y)
+			row.Icon:SetTexture(IconFor(c))
+			local colors = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[c.quality or 1]
+			local hex = colors and colors.hex or "|cffffffff"
+			local isPicked = picked ~= nil and c.itemID == picked
+			local isSuggested = decision and decision.index == c.index
+			row.Name:SetText(hex .. (c.name or "?") .. "|r" .. (isPicked and (" |cff40ff40" .. L["(your pick)"] .. "|r") or (isSuggested and (" |cffffd100" .. L["(suggested)"] .. "|r") or "")))
+			row.Info:SetText(Engine.ItemReasonText(c))
+			row.Border:SetShown(isPicked or (picked == nil and isSuggested))
+			row:Show()
+			y = y - PrePick.ROW_HEIGHT
+		end
+	end
+	for i = shown + 1, #rows do rows[i]:Hide() end
+	frame:SetHeight(-y + 46)
+	frame:Show()
+end
+
+-- The player clicked a reward: remember it (toggle off when clicked again).
+function PrePick.Choose(c)
+	if not c or not state.questID then return end
+	if PrePick.Get(state.questID) == c.itemID then
+		PrePick.Clear(state.questID)
+		NS.Print(L["Pre-pick cleared for %s."], NS.Client.QuestTitle(state.questID) or state.questID)
+	else
+		PrePick.Set(state.questID, c.itemID)
+		NS.Print(L["Pre-pick for %s: %s. It will be taken automatically at hand-in."], NS.Client.QuestTitle(state.questID) or state.questID, Rewards.ChoiceLabel(c))
+		PrePick.Render()
+		NS.After(0.6, function() if state.questID then PrePick.Hide() end end)
+		return
+	end
+	PrePick.Render()
+end
+
+-- Evaluates the log rewards of questID; opens the window when the engine would only
+-- recommend (or when force is set, e.g. /qam pick). Retries while item data loads.
+function PrePick.Open(questID, force, attempt)
+	attempt = attempt or 1
+	if not NS.db or not questID then return false end
+	local source = Rewards.LogSource(questID)
+	local n = NS.SafeNumber(source.Count()) or 0
+	if n < 2 then
+		if force then NS.Print(L["%s has no reward to choose."], NS.Client.QuestTitle(questID) or questID) end
+		return false
+	end
+	local choices = Rewards.Gather(n, source)
+	local decision = Rewards.Evaluate(choices, NS.db.settings, Rules.Player())
+	if decision.pending then
+		if attempt >= PrePick.MAX_LOAD_TRIES then return false end
+		for _, c in ipairs(choices) do
+			if c.loaded == false and c.itemID then NS.Call("C_Item.RequestLoadItemDataByID", c.itemID) end
+		end
+		NS.After(PrePick.RETRY_DELAY, function() PrePick.Open(questID, force, attempt + 1) end)
+		return false
+	end
+	if not force and (decision.action == "auto" or not decision.index) then return false end
+	if not frame then frame = BuildFrame() end
+	state.questID, state.choices, state.decision = questID, choices, decision
+	PrePick.Render()
+	return true
+end
+
+--------------------------------------------------------------------------------
+-- Events and command.
+--------------------------------------------------------------------------------
+NS.RegisterEvent("QUEST_ACCEPTED", function(a, b)
+	if not NS.loaded or not NS.db.settings.prePickUI or not NS.db.settings.enabled then return end
+	-- Forever passes questID first; Era passes questIndex, questID (QuestLogDocumentation).
+	local questID = NS.SafeNumber(b) or NS.SafeNumber(a)
+	if not questID or questID <= 0 then return end
+	NS.After(PrePick.OPEN_DELAY, function() PrePick.Open(questID, false) end)
+end)
+
+local function Forget(questID)
+	questID = NS.SafeNumber(questID)
+	if not questID then return end
+	PrePick.Clear(questID)
+	if state.questID == questID then PrePick.Hide() end
+end
+NS.RegisterEvent("QUEST_TURNED_IN", Forget)
+NS.RegisterEvent("QUEST_REMOVED", Forget)
+
+-- /qam pick [questID]: open for the given quest, else the one selected in the log.
+function PrePick.Command(rest)
+	local questID = tonumber(rest)
+	if not questID then
+		local ctx = NS.Client.RewardContext()
+		questID = ctx and ctx.questID
+	end
+	if not questID then
+		NS.Print(L["Select a quest in the log (or give its ID), then /qam pick."])
+		return
+	end
+	PrePick.Open(questID, true)
+end
+
+function PrePick.DebugReport()
+	local store = NS.chardb and NS.chardb.prePicks or {}
+	NS.Print("Pre-picks: %d stored, window %s for %s", #NS.SortedKeys(store), frame and frame:IsShown() and "shown" or "hidden", tostring(state.questID))
+end

@@ -24,6 +24,7 @@ Rewards.lua
 Engine.lua
 Automation.lua
 Glow.lua
+PrePick.lua
 XPBar.lua
 Settings.lua
 Minimap.lua
