@@ -280,9 +280,13 @@ function Auto.ActGossip()
 			local questID = NS.SafeNumber(info.questID)
 			local repeatable = IsRepeatable(info.repeatable, info.frequency)
 			local title = NS.SafeString(info.title)
+			-- Completion: the gossip entry's flag, or the quest log when the entry
+			-- does not say (Era's C_GossipInfo entries leave isComplete unset).
+			local complete = NS.SafeBool(info.isComplete)
+			if not complete and questID then complete = NS.Client.IsQuestComplete(questID) == true end
 			local ok, reason = true, nil
 			if not questID then ok, reason = false, "no questID"
-			elseif not NS.SafeBool(info.isComplete) then ok, reason = false, "not complete"
+			elseif not complete then ok, reason = false, "not complete"
 			else ok, reason = Auto.MayTurnIn(questID, repeatable) end
 			if ok and not TryOnce("turnin", questID) then ok, reason = false, "already tried" end
 			if ok then

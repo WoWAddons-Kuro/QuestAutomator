@@ -75,6 +75,20 @@ function Era.IsQuestRepeatable(questID)
 	return row.frequency > 0
 end
 
+-- Is the quest in the log and complete (ready to hand in)? true / false / nil (unknown).
+-- Era's C_GossipInfo.GetActiveQuests() entries do not carry a reliable isComplete
+-- (the Era GossipFrame reads completion from the legacy flat returns), so the
+-- gossip walk asks the log instead.
+function Forever.IsQuestComplete(questID)
+	if not NS.SafeBool(SafeCall("C_QuestLog.IsOnQuest", questID)) then return nil end
+	return NS.SafeBool(SafeCall("C_QuestLog.IsComplete", questID)) and not NS.SafeBool(SafeCall("C_QuestLog.IsFailed", questID))
+end
+function Era.IsQuestComplete(questID)
+	local row = EraLogRow(questID)
+	if not row then return nil end
+	return row.isComplete == 1
+end
+
 --------------------------------------------------------------------------------
 -- Quest log walk: list of { questID, title, isComplete } for every real quest
 -- (no headers, no hidden / task entries).
