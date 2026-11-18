@@ -34,20 +34,34 @@ local function Check(parent, key, label, tip, onChange)
 end
 
 -- A horizontal radio group on one row: label on the left, one radio per value.
-local function RadioRow(parent, key, label, values, names, tip)
+-- A radio group. Inline (default): label on the left, radios to its right on the same
+-- line (label column labelWidth wide). wrap = true: radios on a second line, indented.
+local function RadioRow(parent, key, label, values, names, tip, opts)
+	opts = opts or {}
+	local wrap = opts.wrap
+	local labelWidth = opts.labelWidth or 300
 	local holder = CreateFrame("Frame", nil, parent)
-	holder:SetSize(BOX_W - 2 * PAD, 20)
+	holder:SetSize(BOX_W - 2 * PAD, wrap and 40 or 20)
 	local text = holder:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-	text:SetPoint("LEFT", holder, "LEFT", 4, 0)
-	text:SetWidth(300)
+	if wrap then
+		text:SetPoint("TOPLEFT", holder, "TOPLEFT", 4, -2)
+		text:SetWidth(BOX_W - 2 * PAD - 8)
+	else
+		text:SetPoint("LEFT", holder, "LEFT", 4, 0)
+		text:SetWidth(labelWidth)
+	end
 	text:SetJustifyH("LEFT")
 	text:SetText(label)
 	holder.radios = {}
-	local anchor = text
+	local anchor
 	for i, value in ipairs(values) do
 		local r = CreateFrame("CheckButton", nil, holder, "UIRadioButtonTemplate")
 		r:SetSize(16, 16)
-		r:SetPoint("LEFT", anchor, "RIGHT", i == 1 and 8 or 14, 0)
+		if i == 1 then
+			if wrap then r:SetPoint("TOPLEFT", text, "BOTTOMLEFT", 20, -6) else r:SetPoint("LEFT", text, "RIGHT", 8, 0) end
+		else
+			r:SetPoint("LEFT", anchor, "RIGHT", 14, 0)
+		end
 		r.text = r:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 		r.text:SetPoint("LEFT", r, "RIGHT", 3, 0)
 		r.text:SetText(names[value] or tostring(value))
@@ -193,11 +207,11 @@ local function Build()
 		{ "5", L["Nothing wearable: most valuable"], L["No reward fits your class's best armour class or weapon skills: take the one worth the most."] },
 	}
 	for i, row in ipairs(tierRows) do
-		t:Add(RadioRow(t, NS.Engine.TIER_SETTING[row[1]], row[1] .. ". " .. row[2], NS.TIER_ACTIONS, shortNames, row[3]), 20, i == 1 and -8 or -4)
+		t:Add(RadioRow(t, NS.Engine.TIER_SETTING[row[1]], row[1] .. ". " .. row[2], NS.TIER_ACTIONS, shortNames, row[3], { labelWidth = 360 }), 20, i == 1 and -8 or -4)
 	end
 	local qualityNames = {}
 	for _, v in ipairs(NS.QUALITY_CHOICES) do qualityNames[v] = NS.QualityName(v) end
-	t:Add(RadioRow(t, "manualQuality", L["Leave the choice to me from quality"], NS.QUALITY_CHOICES, qualityNames, L["When any reward is of this quality or better, the reward window stays open for you to choose."]), 20, -10)
+	t:Add(RadioRow(t, "manualQuality", L["Leave the choice to me from quality"], NS.QUALITY_CHOICES, qualityNames, L["When any reward is of this quality or better, the reward window stays open for you to choose."], { wrap = true }), 40, -10)
 	t:Add(Slider(t, "QuestAutomatorOptionsBand", "ilvlBand", 0, 10, function(v) return string.format(L["Sidegrade band: %d item levels either side of what you wear"], v) end), 44, -10)
 	t:Finish()
 
@@ -205,10 +219,10 @@ local function Build()
 	local w = Section(L["Wearable and valuable"])
 	w:Add(RadioRow(w, "weaponProficiency", L["Wearable weapons"], NS.WEAPON_PROFICIENCIES,
 		{ learnable = L["weapons my class can learn"], usable = L["weapons I have trained"] },
-		L["Which weapons count as wearable: every weapon your class can train at some trainer, or only those you have the skill for right now."]), 20, -8)
+		L["Which weapons count as wearable: every weapon your class can train at some trainer, or only those you have the skill for right now."], { labelWidth = 160 }), 20, -8)
 	w:Add(RadioRow(w, "valueSource", L["Most valuable means"], NS.VALUE_SOURCES,
 		{ vendor = L["vendor price"], auction = L["auction value"], disenchant = L["disenchant value"] },
-		L["How the value of a reward is measured. Auction and disenchant values need a provider addon; without one the vendor price is used."]), 20, -4)
+		L["How the value of a reward is measured. Auction and disenchant values need a provider addon; without one the vendor price is used."], { labelWidth = 160 }), 20, -4)
 	local weights = w:Add(Note(w), 28, -10)
 	weights.Update = function(self)
 		local player = NS.Rules.Player()
@@ -229,7 +243,7 @@ local function Build()
 	p:Add(Check(p, "minimap", L["Minimap button"], L["Show the button on the minimap. Left-click switches the automation on or off, right-click opens the menu, drag moves it."],
 		function(value) if NS.ShowMinimapButton then NS.ShowMinimapButton(value) end end), 26, -2)
 	p:Add(RadioRow(p, "modifier", L["Pause key"], NS.MODIFIERS, { SHIFT = "Shift", CTRL = "Ctrl", ALT = "Alt", NONE = L["none"] },
-		L["Hold this key while talking to an NPC to do that conversation by hand."]), 20, -8)
+		L["Hold this key while talking to an NPC to do that conversation by hand."], { labelWidth = 160 }), 20, -8)
 	p:Finish()
 
 	local function LayoutContentHeight()
