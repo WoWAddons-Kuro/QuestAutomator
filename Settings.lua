@@ -17,6 +17,11 @@ local function Changed()
 	if optionsFrame and optionsFrame.Update and optionsFrame:IsShown() then optionsFrame:Update() end
 end
 
+-- Other modules (the pick window's close box) change a setting behind the page's back.
+function NS.RefreshSettingsPage()
+	if optionsFrame and optionsFrame.Update and optionsFrame:IsShown() then optionsFrame:Update() end
+end
+
 --------------------------------------------------------------------------------
 -- Widgets. Each returns a frame with :Update() reading the live setting.
 --------------------------------------------------------------------------------

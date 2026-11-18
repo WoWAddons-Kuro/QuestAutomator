@@ -279,4 +279,4 @@ L["Unlock and show the pick window (drag it, then untick)"] = "解锁并显示�
 L["Shows the pick window with sample rewards so you can drag it where you want it. The position is remembered; untick to lock it again."] = "以示例奖励显示预选窗口，便于拖到你想要的位置。位置会被记住；取消勾选即可重新锁定。"
 L["Chat messages for quests accepted, handed in and rewards chosen"] = "接受任务、交付任务和选择奖励时的聊天提示"
 L["Sample quest"] = "示例任务"
-L["Preview: drag me into place, then untick the setting to lock."] = "预览：把我拖到合适位置，然后取消勾选设置以锁定。"
+L["Preview: drag me into place, then untick the setting to lock."] = "预览：把我拖到合适位置，然后取消勾选设置以锁定。"L["ilevel"] = "物品等级"

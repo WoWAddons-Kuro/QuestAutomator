@@ -15,9 +15,10 @@ local PrePick = {}
 NS.PrePick = PrePick
 
 PrePick.FRAME_NAME = "QuestAutomatorPrePickFrame"
-PrePick.ICON_SIZE = 40
-PrePick.ROW_HEIGHT = 46
-PrePick.WIDTH = 320
+PrePick.ICON_SIZE = 36
+PrePick.ROW_HEIGHT = 64        -- icon + name line + two stat-delta lines
+PrePick.WIDTH = 360
+PrePick.STAT_COLS = 2          -- stat deltas laid out in this many columns
 PrePick.OPEN_DELAY = 0.3   -- seconds after QUEST_ACCEPTED before the log is read
 PrePick.MAX_LOAD_TRIES = 6
 PrePick.RETRY_DELAY = 0.5
@@ -81,32 +82,37 @@ local function BuildFrame()
 	frame = f
 	PrePick.RestorePosition()
 	if f.SetBackdrop then
+		-- The plain tooltip nine-slice (what the settings sections and KondoBags use),
+		-- not the bolted dialog border.
 		f:SetBackdrop({
-			bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-			edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-			tile = true, tileSize = 32, edgeSize = 32,
-			insets = { left = 11, right = 12, top = 12, bottom = 11 },
+			bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+			edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+			tile = true, tileSize = 16, edgeSize = 12,
+			insets = { left = 3, right = 3, top = 3, bottom = 3 },
 		})
+		f:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
+		f:SetBackdropBorderColor(0.6, 0.6, 0.6, 0.8)
 	end
 
 	f.Title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	f.Title:SetPoint("TOP", f, "TOP", 0, -16)
+	f.Title:SetPoint("TOP", f, "TOP", 0, -10)
 	f.Title:SetWidth(PrePick.WIDTH - 40)
 	f.Title:SetJustifyH("CENTER")
 
 	f.Reason = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	f.Reason:SetPoint("TOP", f.Title, "BOTTOM", 0, -4)
+	f.Reason:SetPoint("TOP", f.Title, "BOTTOM", 0, -3)
 	f.Reason:SetWidth(PrePick.WIDTH - 40)
 	f.Reason:SetJustifyH("CENTER")
 
 	f.Close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-	f.Close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -5, -5)
+	f.Close:SetPoint("TOPRIGHT", f, "TOPRIGHT", 2, 2)
+	f.Close:SetScript("OnClick", function() PrePick.Dismiss() end)
 
 	f.Later = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
 	f.Later:SetSize(120, 22)
-	f.Later:SetPoint("BOTTOM", f, "BOTTOM", 0, 14)
+	f.Later:SetPoint("BOTTOM", f, "BOTTOM", 0, 10)
 	f.Later:SetText(L["Decide at hand-in"])
-	f.Later:SetScript("OnClick", function() PrePick.Hide() end)
+	f.Later:SetScript("OnClick", function() PrePick.Dismiss() end)
 
 	f:Hide()
 	return f
@@ -135,6 +141,19 @@ local function BuildRow(index)
 	row.Name:SetPoint("RIGHT", row, "RIGHT", -4, 0)
 	row.Name:SetJustifyH("LEFT")
 
+	-- Stat delta grid under the name: STAT_COLS columns, each "label  value  +delta".
+	-- Cells are plain font strings; Render fills them from PrePick.StatDeltas(c).
+	row.Cells = {}
+	local colW = math.floor((PrePick.WIDTH - 40 - PrePick.ICON_SIZE - 8) / PrePick.STAT_COLS)
+	for i = 1, PrePick.STAT_COLS * 2 do
+		local col, line = (i - 1) % PrePick.STAT_COLS, math.floor((i - 1) / PrePick.STAT_COLS)
+		local fs = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		fs:SetPoint("TOPLEFT", row.Name, "BOTTOMLEFT", col * colW, -2 - line * 13)
+		fs:SetWidth(colW - 4)
+		fs:SetJustifyH("LEFT")
+		row.Cells[i] = fs
+	end
+	-- Hidden alternative when there is nothing to compare: the engine's reason text.
 	row.Info = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	row.Info:SetPoint("TOPLEFT", row.Name, "BOTTOMLEFT", 0, -2)
 	row.Info:SetPoint("RIGHT", row, "RIGHT", -4, 0)
@@ -146,11 +165,7 @@ local function BuildRow(index)
 
 	row:SetScript("OnClick", function(self) PrePick.Choose(self.choice) end)
 	row:SetScript("OnEnter", function(self)
-		if self.choice and self.choice.link and GameTooltip then
-			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-			GameTooltip:SetHyperlink(self.choice.link)
-			GameTooltip:Show()
-		end
+		PrePick.ShowTooltip(self)
 	end)
 	row:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 	return row
@@ -169,11 +184,97 @@ local function IconFor(c)
 end
 
 --------------------------------------------------------------------------------
+-- Tooltip: the full item tooltip (quest-log item when the choice came from the
+-- log, so it shows the "Currently equipped" comparison; the hyperlink otherwise).
+--------------------------------------------------------------------------------
+function PrePick.ShowTooltip(row)
+	local c = row.choice
+	if not c or not GameTooltip then return end
+	GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+	local shown = false
+	if state.source and state.source.name == "log" and not state.preview and GameTooltip.SetQuestLogItem then
+		-- Era / Forever both take ("choice", index) for the selected log quest.
+		shown = pcall(GameTooltip.SetQuestLogItem, GameTooltip, "choice", c.index)
+	end
+	if not shown and c.link then
+		GameTooltip:SetHyperlink(c.link)
+		shown = true
+	end
+	if not shown then
+		GameTooltip:SetText(c.name or "?")
+	end
+	if GameTooltip_ShowCompareItem and not state.preview then pcall(GameTooltip_ShowCompareItem, GameTooltip) end
+	GameTooltip:Show()
+end
+
+--------------------------------------------------------------------------------
+-- Stat deltas: { { label, value, delta } ... }, item level first, then the stats
+-- the class weights care about (heaviest first), each against the worn piece.
+-- Sample rows carry a ready-made list in c.sampleDeltas.
+--------------------------------------------------------------------------------
+local function WornStats(c)
+	local link = c.worn and c.worn.link
+	if not link then return {} end
+	return NS.Client.ItemStats(link) or Rewards.StatsFromTooltipData(nil) or {}
+end
+
+function PrePick.StatDeltas(c, player)
+	if c.sampleDeltas then return c.sampleDeltas end
+	local out = {}
+	local wornLevel = c.worn and c.worn.itemLevel or nil
+	out[#out + 1] = { label = L["ilevel"], value = c.itemLevel or 0, delta = wornLevel and ((c.itemLevel or 0) - wornLevel) or nil }
+	local worn = WornStats(c)
+	local keys = {}
+	for key, amount in pairs(c.stats or {}) do if amount ~= 0 then keys[#keys + 1] = key end end
+	for key, amount in pairs(worn) do
+		if amount ~= 0 and not (c.stats and c.stats[key]) then keys[#keys + 1] = key end
+	end
+	local weights = player and player.weights or {}
+	table.sort(keys, function(a, b)
+		local wa, wb = weights[a] or 0, weights[b] or 0
+		if wa ~= wb then return wa > wb end
+		return a < b
+	end)
+	for _, key in ipairs(keys) do
+		local mine = c.stats and c.stats[key] or 0
+		local theirs = worn[key]
+		out[#out + 1] = { label = Rules.StatName(key), value = mine, delta = (c.worn and c.worn.link) and (mine - (theirs or 0)) or nil }
+	end
+	return out
+end
+
+local function FormatDelta(d)
+	if d == nil then return "" end
+	if d > 0 then return string.format(" |cff40ff40+%d|r", d) end
+	if d < 0 then return string.format(" |cffff4040%d|r", d) end
+	return " |cff808080=|r"
+end
+
+local function FormatCell(entry)
+	if not entry then return "" end
+	local v = entry.value
+	if type(v) == "number" and v ~= math.floor(v) then v = string.format("%.1f", v) end
+	return string.format("|cffb0b0b0%s|r %s%s", tostring(entry.label), tostring(v), FormatDelta(entry.delta))
+end
+
+--------------------------------------------------------------------------------
 -- Show / hide.
 --------------------------------------------------------------------------------
 function PrePick.Hide()
 	if frame then frame:Hide() end
 	state.questID, state.choices, state.decision, state.preview = nil, nil, nil, nil
+	state.source = nil
+end
+
+-- The close box and "Decide at hand-in": in preview mode they also untick the
+-- unlock setting, so the window locks and goes away without a trip to the settings.
+function PrePick.Dismiss()
+	if state.preview and NS.db then
+		NS.db.settings.prePickUnlocked = false
+		NS.OnSettingsChanged()
+		if NS.RefreshSettingsPage then NS.RefreshSettingsPage() end
+	end
+	PrePick.Hide()
 end
 
 -- Lays the current state out. Called by Open and when a pick changes.
@@ -188,6 +289,7 @@ function PrePick.Render()
 		frame.Reason:SetText(decision and Engine.LeaveReasonText(decision) or "")
 	end
 	local picked = PrePick.Get(state.questID)
+	local player = not state.preview and Rules.Player() or nil
 	local y = -52
 	local shown = 0
 	for i, c in ipairs(state.choices) do
@@ -203,14 +305,27 @@ function PrePick.Render()
 			local isPicked = picked ~= nil and c.itemID == picked
 			local isSuggested = decision and decision.index == c.index
 			row.Name:SetText(hex .. (c.name or "?") .. "|r" .. (isPicked and (" |cff40ff40" .. L["(your pick)"] .. "|r") or (isSuggested and (" |cffffd100" .. L["(suggested)"] .. "|r") or "")))
-			row.Info:SetText(Engine.ItemReasonText(c))
+			-- Stat grid when the item is wearable (there is something to compare); the
+			-- engine's reason line otherwise (hard to value, cannot wear...).
+			local deltas = c.wearable and PrePick.StatDeltas(c, player) or nil
+			if deltas and #deltas > 0 then
+				for j, cell in ipairs(row.Cells) do
+					cell:SetText(FormatCell(deltas[j]))
+					cell:Show()
+				end
+				row.Info:Hide()
+			else
+				for _, cell in ipairs(row.Cells) do cell:Hide() end
+				row.Info:SetText(Engine.ItemReasonText(c))
+				row.Info:Show()
+			end
 			row.Border:SetShown(isPicked or (picked == nil and isSuggested))
 			row:Show()
 			y = y - PrePick.ROW_HEIGHT
 		end
 	end
 	for i = shown + 1, #rows do rows[i]:Hide() end
-	frame:SetHeight(-y + 46)
+	frame:SetHeight(-y + 40)
 	frame:Show()
 end
 
@@ -238,9 +353,11 @@ end
 -- is involved: clicks do nothing, the title says so, and hiding it re-locks.
 --------------------------------------------------------------------------------
 local SAMPLE_ROWS = {
-	{ index = 1, lootType = 0, name = "Sample Sword", quality = 2, itemLevel = 22, loaded = true, wearable = true, worn = { itemLevel = 18 }, delta = 4, isUpgrade = true, hardToValue = false, icon = "Interface\\Icons\\INV_Sword_04" },
-	{ index = 2, lootType = 0, name = "Sample Trinket", quality = 3, itemLevel = 22, loaded = true, wearable = true, hardToValue = true, hardReason = "trinket", icon = "Interface\\Icons\\INV_Misc_OrbOfDeception" },
-	{ index = 3, lootType = 0, name = "Sample Cloak", quality = 2, itemLevel = 20, loaded = true, wearable = true, worn = { itemLevel = 20 }, delta = 0, isSidegrade = true, hardToValue = false, icon = "Interface\\Icons\\INV_Misc_Cape_11" },
+	{ index = 1, lootType = 0, name = "Sample Sword", quality = 2, itemLevel = 22, loaded = true, wearable = true, worn = { itemLevel = 18 }, delta = 4, isUpgrade = true, hardToValue = false, icon = "Interface\\Icons\\INV_Sword_04",
+		sampleDeltas = { { label = "ilevel", value = 22, delta = 4 }, { label = "Intellect", value = 12, delta = -3 }, { label = "Strength", value = 18, delta = 1 }, { label = "Stamina", value = 9, delta = 0 } } },
+	{ index = 2, lootType = 0, name = "Sample Trinket", quality = 3, itemLevel = 22, loaded = true, wearable = false, hardToValue = true, hardReason = "trinket", icon = "Interface\\Icons\\INV_Misc_OrbOfDeception" },
+	{ index = 3, lootType = 0, name = "Sample Cloak", quality = 2, itemLevel = 20, loaded = true, wearable = true, worn = { itemLevel = 20 }, delta = 0, isSidegrade = true, hardToValue = false, icon = "Interface\\Icons\\INV_Misc_Cape_11",
+		sampleDeltas = { { label = "ilevel", value = 20, delta = 0 }, { label = "Agility", value = 6, delta = 2 }, { label = "Armor", value = 24, delta = -5 } } },
 }
 
 function PrePick.SetUnlocked(unlocked)
@@ -284,7 +401,7 @@ function PrePick.Open(questID, force, attempt)
 	end
 	if not force and (decision.action == "auto" or not decision.index) then return false end
 	if not frame then frame = BuildFrame() end
-	state.questID, state.choices, state.decision = questID, choices, decision
+	state.questID, state.choices, state.decision, state.source = questID, choices, decision, source
 	PrePick.Render()
 	return true
 end
