@@ -599,8 +599,8 @@ function QuestAutomator_OnAddonCompartmentClick(_, buttonName)
 	if not NS.loaded then return end
 	if buttonName == "RightButton" then
 		NS.OpenSettings()
-	else
-		NS.SetFlag("enabled", "", L["Automation"])
+	elseif not (NS.PrePick and NS.PrePick.OpenAny and NS.PrePick.OpenAny()) then
+		NS.Print(L["No quest in your log has a reward to choose."])
 	end
 end
 
@@ -609,7 +609,7 @@ function QuestAutomator_OnAddonCompartmentEnter(_, button)
 	GameTooltip:SetOwner(button, "ANCHOR_LEFT")
 	GameTooltip:SetText(L["QuestAutomator"])
 	GameTooltip:AddLine(format(L["Automation: %s%s"], OnOff(NS.db.settings.enabled), ""), 1, 1, 1)
-	GameTooltip:AddLine(L["Left-click: switch on or off. Right-click: settings."], 0.8, 0.8, 0.8)
+	GameTooltip:AddLine(L["Left-click: pick window. Right-click: settings."], 0.8, 0.8, 0.8)
 	GameTooltip:Show()
 end
 

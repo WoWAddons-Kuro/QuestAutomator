@@ -1,7 +1,7 @@
 -- QuestAutomator: minimap button (shown by default, `/qam minimap` or the
--- settings page toggles it). Left-click switches the automation on or off (the icon
--- greys out while it is off or paused), right-click opens a menu, drag moves it around
--- the minimap. No library. The only OnUpdate runs while it is being dragged.
+-- settings page toggles it). Left-click opens the pick window (the icon greys out while
+-- the automation is off or paused), right-click opens the settings page, drag moves it
+-- around the minimap. No library. The only OnUpdate runs while it is being dragged.
 --
 -- Placement: until the player drags the button, its angle is chosen automatically. The
 -- buttons already sitting on the minimap ring (other addons' buttons are children of
@@ -171,18 +171,15 @@ local function ShowTooltip(owner)
 			else status, r, g, b = L["decide"], 1, 0.82, 0 end
 			GameTooltip:AddDoubleLine(q.title or ("#" .. q.questID), status, 1, 1, 1, r, g, b)
 		end
-		GameTooltip:AddLine(L["Left-click: open the pick window. Right-click: menu. Drag to move."], 0.8, 0.8, 0.8)
-	else
-		GameTooltip:AddLine(L["Left-click: switch the automation on or off. Right-click: menu. Drag to move."], 0.8, 0.8, 0.8)
 	end
+	GameTooltip:AddLine(L["Left-click: open the pick window. Right-click: settings. Drag to move."], 0.8, 0.8, 0.8)
 	GameTooltip:Show()
 end
 
--- Left-click: the pick window when any log quest has a reward to choose, else
--- the on/off switch.
+-- Left-click: the pick window (a chat line when no log quest has a reward to choose).
 local function OnLeftClick()
 	if NS.PrePick and NS.PrePick.OpenAny and NS.PrePick.OpenAny() then return end
-	NS.SetFlag("enabled", "", L["Automation"])
+	NS.Print(L["No quest in your log has a reward to choose."])
 end
 
 --------------------------------------------------------------------------------
@@ -266,7 +263,7 @@ local function CreateButton()
 
 	button:SetScript("OnClick", function(self, mouseButton)
 		if mouseButton == "RightButton" then
-			NS.OpenMinimapMenu(self)
+			NS.OpenSettings()
 		else
 			OnLeftClick()
 		end
