@@ -63,7 +63,7 @@ right away (the suggestion glows). Click one and the hand-in is automatic anyway
 ## Development
 
 Part of the `3P_WoWAddons` workspace: `cmd\publish.cmd` installs into the game, `cmd\release.cmd` tags
-(`vYYYY.MM.DD.HHMM`). See `..\QuestAutomator_SPEC.md` for the design and roadmap.
+(`vYYYY.MM.DD.HHMM`). See `SPECS\QuestAutomator_SPEC.md` for the design and roadmap.
 
 ## Credits and license
 
