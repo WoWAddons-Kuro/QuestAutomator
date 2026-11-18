@@ -184,21 +184,47 @@ function Rewards.StatsFromTooltip(index, kind)
 	return Rewards.StatsFromTooltipData(NS.Call("C_TooltipInfo.GetQuestItem", kind or "choice", index))
 end
 
+-- Trigger prefixes that mark an effect line: "Use:", "Chance on hit:", "Equip:".
+-- A line starting with one of these that the stat parser cannot read is an effect
+-- the engine cannot value (spec tier 1). Live globals first, then the enUS text.
+local TRIGGER_FALLBACKS = {
+	ITEM_SPELL_TRIGGER_ONUSE = { "Use:", "使用：" },
+	ITEM_SPELL_TRIGGER_ONPROC = { "Chance on hit:", "击中时可能：" },
+	ITEM_SPELL_TRIGGER_ONEQUIP = { "Equip:", "装备：" },
+}
+local function StartsWithTrigger(text, tag)
+	local live = _G[tag]
+	if type(live) == "string" and live ~= "" and text:sub(1, #live) == live then return true end
+	for _, prefix in ipairs(TRIGGER_FALLBACKS[tag] or {}) do
+		if text:sub(1, #prefix) == prefix then return true end
+	end
+	return false
+end
+
+-- -> stats table (or nil), effects = { use = bool, proc = bool, unknownEquip = bool }
 function Rewards.StatsFromTooltipData(data)
-	if type(data) ~= "table" or type(data.lines) ~= "table" then return nil end
+	local effects = { use = false, proc = false, unknownEquip = false }
+	if type(data) ~= "table" or type(data.lines) ~= "table" then return nil, effects end
 	local stats, any = {}, false
 	for _, line in ipairs(data.lines) do
 		local text = type(line) == "table" and NS.SafeString(line.leftText) or nil
 		if text then
+			local plain = StripCodes(text)
 			local key, value = Rewards.ParseStatLine(text)
 			if key then
 				stats[key] = (stats[key] or 0) + value
 				any = true
+			elseif StartsWithTrigger(plain, "ITEM_SPELL_TRIGGER_ONUSE") then
+				effects.use = true
+			elseif StartsWithTrigger(plain, "ITEM_SPELL_TRIGGER_ONPROC") then
+				effects.proc = true
+			elseif StartsWithTrigger(plain, "ITEM_SPELL_TRIGGER_ONEQUIP") then
+				effects.unknownEquip = true
 			end
 		end
 	end
-	if any then return stats end
-	return nil
+	if any then return stats, effects end
+	return nil, effects
 end
 
 --------------------------------------------------------------------------------
@@ -238,10 +264,16 @@ function Rewards.Gather(numChoices, source)
 				end
 				local stats = Rewards.StatsFromAPI(c.link)
 				c.statsSource = stats and "api" or nil
+				-- The tooltip is always read for effect lines (Use / Chance on hit /
+				-- unparsed Equip), even when the API already gave the stats.
+				local tooltipStats, effects = Rewards.StatsFromTooltipData(source.Tooltip(i))
 				if not stats then
-					stats = Rewards.StatsFromTooltipData(source.Tooltip(i))
+					stats = tooltipStats
 					c.statsSource = stats and "tooltip" or "none"
 				end
+				c.hasUseEffect = effects.use
+				c.hasProcEffect = effects.proc
+				c.hasUnknownEquip = effects.unknownEquip
 				c.stats = stats or {}
 			else
 				c.loaded = false
@@ -286,133 +318,10 @@ function Rewards.FitScore(c, player)
 	return { score = typeScore * (1 + statScore), typeScore = typeScore, statScore = statScore, parts = parts, typeName = typeName }
 end
 
-local function Value(c)
-	return (c.sellPrice or 0) * (c.count or 1)
-end
-
--- a beats b: fit score, then vendor value, then quality, then item level, then the earlier slot.
-function Rewards.Better(a, b)
-	local fa, fb = a.fit and a.fit.score or 0, b.fit and b.fit.score or 0
-	if fa ~= fb then return fa > fb end
-	if Value(a) ~= Value(b) then return Value(a) > Value(b) end
-	if (a.quality or 0) ~= (b.quality or 0) then return (a.quality or 0) > (b.quality or 0) end
-	if (a.itemLevel or 0) ~= (b.itemLevel or 0) then return (a.itemLevel or 0) > (b.itemLevel or 0) end
-	return a.index < b.index
-end
-
-function Rewards.ByValue(items, reason)
-	local best
-	for _, c in ipairs(items) do
-		c.value = Value(c)
-		if c.value > 0 then
-			if not best or c.value > best.value
-				or (c.value == best.value and ((c.quality or 0) > (best.quality or 0)
-					or ((c.quality or 0) == (best.quality or 0) and (c.itemLevel or 0) > (best.itemLevel or 0)))) then
-				best = c
-			end
-		end
-	end
-	if best then return { index = best.index, choice = best, reason = reason or "value" } end
-	return { reason = "novalue" }
-end
-
--- Kinds of reward the addon does not pick unless the matching setting allows it.
--- When at least one is among the choices, the whole choice is the player's.
--- Checked in this order.
-Rewards.KINDS = {
-	{ key = "weapons", reason = "weapon", Is = function(c) return Rules.IsWeapon(c.classID, c.subclassID) end },
-	{ key = "trinkets", reason = "trinket", Is = function(c) return Rules.IsTrinket(c.equipLoc) end },
-}
-
--- The rewards to score, or nil and the reason the choice is handed to the player.
-function Rewards.ApplyKinds(items, settings)
-	for _, kind in ipairs(Rewards.KINDS) do
-		if not settings[kind.key] then
-			for _, c in ipairs(items) do
-				if kind.Is(c) then return nil, kind.reason end
-			end
-		end
-	end
-	return items
-end
-
--- Decision: { index, choice, reason } when the addon picks, { reason } when the
--- choice is left to the player, { pending = true } while item data is missing.
+-- The decision itself is the priority engine's (Engine.lua); this is the entry
+-- point Automation and Glow call. RewardDecision shape: see Engine.Evaluate.
 function Rewards.Evaluate(choices, settings, player)
-	if settings.rewardMode == "manual" then return { reason = "manual" } end
-	local items = {}
-	for _, c in ipairs(choices) do
-		if c.lootType == Rewards.LOOT_ITEM then items[#items + 1] = c end
-	end
-	if #items == 0 then return { reason = "currency" } end
-	for _, c in ipairs(items) do
-		if not c.loaded then return { pending = true } end
-	end
-	-- A reward at or above the manual-quality threshold is the player's call.
-	local threshold = tonumber(settings.manualQuality)
-	if threshold and threshold >= 0 then
-		local notable
-		for _, c in ipairs(items) do
-			if (c.quality or 0) >= threshold and (not notable or (c.quality or 0) > (notable.quality or 0)) then notable = c end
-		end
-		if notable then return { reason = "quality", choice = notable, quality = notable.quality } end
-	end
-	-- Weapons and trinkets are the player's call unless allowed, in either mode.
-	local pool, handOff = Rewards.ApplyKinds(items, settings)
-	if not pool then return { reason = handOff } end
-	if settings.rewardMode == "value" then return Rewards.ByValue(pool, "value") end
-
-	for _, c in ipairs(pool) do
-		c.fit = Rewards.FitScore(c, player)
-	end
-
-	-- Weapon kind. The best weapon of the kind the class wants (ranged for a hunter, melee
-	-- for the melee classes) beats every weapon of the other kind, however they score.
-	-- Between that weapon and the rest (armour, rings...) the score decides. A weapon of
-	-- the other kind keeps its score: it competes with the rest as usual, wins outright when
-	-- no wanted-kind weapon is offered, and when it beats the rest it is the wanted weapon,
-	-- not the rest, that is taken.
-	local wanted
-	if settings.weapons and player.weaponKind then
-		for _, c in ipairs(pool) do
-			if c.fit.score > 0 and Rules.IsWeapon(c.classID, c.subclassID)
-				and Rules.WeaponCategory(c.subclassID) == player.weaponKind
-				and (not wanted or Rewards.Better(c, wanted)) then
-				wanted = c
-			end
-		end
-	end
-
-	local best
-	if wanted then
-		local other
-		for _, c in ipairs(pool) do
-			if c ~= wanted and c.fit.score > 0 then
-				if Rules.IsWeapon(c.classID, c.subclassID) and Rules.WeaponCategory(c.subclassID) ~= player.weaponKind then
-					c.fit.otherKind = true
-				end
-				if not other or Rewards.Better(c, other) then other = c end
-			end
-		end
-		if not other or Rules.IsWeapon(other.classID, other.subclassID) then
-			best = wanted
-		else
-			best = Rewards.Better(wanted, other) and wanted or other
-		end
-	else
-		for _, c in ipairs(pool) do
-			if c.fit.score > 0 and (not best or Rewards.Better(c, best)) then best = c end
-		end
-	end
-	if best then return { index = best.index, choice = best, reason = "fit", pool = pool } end
-	if settings.fallbackToValue then
-		local decision = Rewards.ByValue(pool, "fallback")
-		if decision.index then
-			decision.pool = pool
-			return decision
-		end
-	end
-	return { reason = "nofit", pool = pool }
+	return NS.Engine.Evaluate(choices, settings, player)
 end
 
 --------------------------------------------------------------------------------
@@ -423,38 +332,6 @@ local function FormatAmount(amount)
 	return format("%+.1f", amount)
 end
 Rewards.FormatAmount = FormatAmount
-
-function Rewards.Describe(decision)
-	local c = decision.choice
-	if not c then return "" end
-	if decision.reason == "fit" then
-		local bits = {}
-		if c.fit and c.fit.typeName then bits[#bits + 1] = c.fit.typeName end
-		for i = 1, math.min(3, c.fit and #c.fit.parts or 0) do
-			local p = c.fit.parts[i]
-			bits[#bits + 1] = FormatAmount(p.amount) .. " " .. Rules.StatName(p.key)
-		end
-		if #bits == 0 then bits[1] = L["usable by your class"] end
-		return format(L["best fit: %s"], table.concat(bits, ", "))
-	elseif decision.reason == "fallback" then
-		return format(L["nothing fits, most valuable: %s"], NS.FormatMoney(c.value or Value(c)))
-	end
-	return format(L["most valuable: %s"], NS.FormatMoney(c.value or Value(c)))
-end
-
-function Rewards.ReasonText(reason, decision)
-	if reason == "manual" then return L["reward choice is set to manual"] end
-	if reason == "quality" then
-		return format(L["a %s reward is offered"], NS.QualityName(decision and decision.quality or 0))
-	end
-	if reason == "weapon" then return L["a weapon is offered"] end
-	if reason == "trinket" then return L["a trinket is offered"] end
-	if reason == "nofit" then return L["none of the rewards fits your class"] end
-	if reason == "novalue" then return L["the rewards have no vendor value"] end
-	if reason == "currency" then return L["only currencies are offered"] end
-	if reason == "pending" then return L["the item data did not load in time"] end
-	return tostring(reason)
-end
 
 function Rewards.ChoiceLabel(c)
 	return c.link or c.name or (c.itemID and ("item:" .. c.itemID)) or "?"

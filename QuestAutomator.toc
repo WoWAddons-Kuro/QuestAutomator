@@ -21,6 +21,7 @@ Core.lua
 Client.lua
 Rules.lua
 Rewards.lua
+Engine.lua
 Automation.lua
 Glow.lua
 XPBar.lua

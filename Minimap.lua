@@ -157,7 +157,7 @@ local function ShowTooltip(owner)
 	local paused = NS.Auto and NS.Auto.SessionPaused()
 	GameTooltip:AddLine(string.format(L["Automation: %s%s"], s.enabled and L["on"] or L["off"],
 		paused and (" (" .. L["paused for this session"] .. ")") or ""), 1, 1, 1)
-	GameTooltip:AddDoubleLine(L["Reward choice"], NS.RewardModeName(s.rewardMode), 1, 1, 1, 1, 1, 1)
+	GameTooltip:AddDoubleLine(L["Reward choice"], NS.TierSummaryShort(), 1, 1, 1, 1, 1, 1)
 	GameTooltip:AddDoubleLine(L["Pause key"], s.modifier == "NONE" and L["none"] or s.modifier, 1, 1, 1, 1, 1, 1)
 	GameTooltip:AddLine(L["Left-click: switch the automation on or off. Right-click: menu. Drag to move."], 0.8, 0.8, 0.8)
 	GameTooltip:Show()
@@ -179,17 +179,18 @@ local function Generator(owner, root)
 	Flag(root, "accept", L["Accept quests"])
 	Flag(root, "turnIn", L["Hand in quests"])
 	root:CreateDivider()
-	for _, mode in ipairs(NS.REWARD_MODES) do
-		root:CreateRadio(L["Reward: %s"]:format(NS.RewardModeName(mode)),
-			function() return Cfg().rewardMode == mode end,
+	-- One checkbox per reward tier: checked = pick automatically, unchecked = recommend only.
+	for _, n in ipairs({ "1", "2", "3", "4", "5" }) do
+		local key = NS.Engine.TIER_SETTING[n]
+		root:CreateCheckbox(L["Auto: %s"]:format(NS.Engine.TierName(n)),
+			function() return Cfg()[key] == "auto" end,
 			function()
-				Cfg().rewardMode = mode
-				NS.Print("%s: %s", L["Reward choice"], NS.RewardModeName(mode))
+				Cfg()[key] = Cfg()[key] == "auto" and "recommend" or "auto"
+				NS.Print("%s: %s", L["Tier %s (%s)"]:format(n, NS.Engine.TierName(n)), NS.TierActionNames()[Cfg()[key]])
 				NS.OnSettingsChanged()
 			end)
 	end
-	Flag(root, "weapons", L["Pick weapons too"])
-	Flag(root, "trinkets", L["Pick trinkets too"])
+	Flag(root, "prePickUI", L["Ask me when I accept a quest"])
 	Flag(root, "announce", L["Announcements"])
 	Flag(root, "xpBar", L["Completed quests on the experience bar"])
 	root:CreateDivider()

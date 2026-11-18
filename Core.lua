@@ -175,10 +175,16 @@ NS.DEFAULT_SETTINGS = {
 	acceptRepeatable = false,  -- also accept daily / repeatable quests
 	turnInRepeatable = false,  -- also hand in daily / repeatable quests (they usually consume items)
 	confirmPartyQuests = true, -- accept escort quests started by a party member
-	rewardMode = "fit",        -- "fit" (armour type + stats), "value" (most expensive), "manual"
-	weapons = false,           -- let the addon pick weapons too; off, any weapon among the choices leaves the whole choice to you
-	trinkets = false,          -- let the addon pick trinkets too; same rule
-	fallbackToValue = true,    -- fit mode: nothing usable -> take the most valuable reward
+	-- Reward priority engine (Engine.lua, spec §6). Each tier: "auto" or "recommend".
+	tier1Action = "recommend", -- hard to value: trinket, relic, Use / proc effect, not equipment
+	tier2Action = "auto",      -- one wearable reward is a clear upgrade (ilvl > worn + ilvlBand)
+	tier3Action = "auto",      -- one wearable reward is a sidegrade (within ilvlBand of worn)
+	tier4Action = "recommend", -- two or more rewards are upgrades or sidegrades
+	tier5Action = "auto",      -- nothing wearable: the most valuable reward
+	ilvlBand = 2,              -- item levels either side of the worn piece that count as a sidegrade
+	weaponProficiency = "learnable", -- "learnable" (the class can train it) or "usable" (the character has the skill)
+	valueSource = "vendor",    -- "vendor" | "auction" | "disenchant" (the latter two fall back to vendor without a provider)
+	prePickUI = true,          -- show the pick window when a quest with a recommend-tier reward is accepted
 	manualQuality = 3,         -- a reward of this quality or better is left to the player (-1 = never); 3 = Rare
 	modifier = "SHIFT",        -- key that pauses the automation while held: SHIFT, CTRL, ALT, NONE
 	announce = true,           -- chat line for every quest accepted, handed in and reward chosen
@@ -197,7 +203,9 @@ function NS.OnSettingsChanged()
 	if NS.XPBar and NS.XPBar.Refresh then NS.XPBar.Refresh() end
 end
 
-NS.REWARD_MODES = { "fit", "value", "manual" }
+NS.TIER_ACTIONS = { "recommend", "auto" }
+NS.WEAPON_PROFICIENCIES = { "learnable", "usable" }
+NS.VALUE_SOURCES = { "vendor", "auction", "disenchant" }
 NS.MODIFIERS = { "SHIFT", "CTRL", "ALT", "NONE" }
 NS.QUALITY_CHOICES = { -1, 1, 2, 3, 4, 5 } -- never, Common, Uncommon, Rare, Epic, Legendary (Enum.ItemQuality)
 
@@ -252,8 +260,18 @@ function NS.InitDB()
 	db.version = 1
 	local settings = CopyDefaults(type(db.settings) == "table" and db.settings or {}, NS.DEFAULT_SETTINGS)
 	settings.settingsVersion = NS.SETTINGS_VERSION
-	if not Contains(NS.REWARD_MODES, settings.rewardMode) then settings.rewardMode = NS.DEFAULT_SETTINGS.rewardMode end
-	settings.weaponOffered, settings.trinketOffered = nil, nil -- removed in 0.2.0: a weapon or trinket offered always leaves the choice to the player
+	-- Removed with the priority engine (QuestAutomator fork): the upstream reward
+	-- mode and its kind switches. The tiers replace them.
+	settings.rewardMode, settings.weapons, settings.trinkets, settings.fallbackToValue = nil, nil, nil, nil
+	settings.weaponOffered, settings.trinketOffered = nil, nil
+	for _, key in ipairs({ "tier1Action", "tier2Action", "tier3Action", "tier4Action", "tier5Action" }) do
+		if not Contains(NS.TIER_ACTIONS, settings[key]) then settings[key] = NS.DEFAULT_SETTINGS[key] end
+	end
+	if not Contains(NS.WEAPON_PROFICIENCIES, settings.weaponProficiency) then settings.weaponProficiency = NS.DEFAULT_SETTINGS.weaponProficiency end
+	if not Contains(NS.VALUE_SOURCES, settings.valueSource) then settings.valueSource = NS.DEFAULT_SETTINGS.valueSource end
+	settings.ilvlBand = tonumber(settings.ilvlBand) or NS.DEFAULT_SETTINGS.ilvlBand
+	if settings.ilvlBand < 0 then settings.ilvlBand = 0 end
+	if settings.ilvlBand > 20 then settings.ilvlBand = 20 end
 	if not Contains(NS.MODIFIERS, settings.modifier) then settings.modifier = NS.DEFAULT_SETTINGS.modifier end
 	if not Contains(NS.QUALITY_CHOICES, settings.manualQuality) then settings.manualQuality = NS.DEFAULT_SETTINGS.manualQuality end
 	db.settings = settings
@@ -268,6 +286,7 @@ function NS.InitDB()
 	cdb.version = 1
 	cdb.stats = type(cdb.stats) == "table" and cdb.stats or nil -- list of stat keys overriding the class profile
 	cdb.counts = CopyDefaults(type(cdb.counts) == "table" and cdb.counts or {}, { accepted = 0, turnedIn = 0, chosen = 0, left = 0 })
+	cdb.prePicks = type(cdb.prePicks) == "table" and cdb.prePicks or {} -- questID -> itemID chosen at accept time (pre-pick UI)
 	NS.chardb = cdb
 	NS.loaded = true
 end
@@ -329,9 +348,11 @@ local function PrintHelp()
 	NS.Print(L["/qam on|off - switch the automation on or off"])
 	NS.Print(L["/qam pause - pause for this session (or hold the modifier key while talking to an NPC)"])
 	NS.Print(L["/qam accept|turnin|trivial|repeatable|party|announce on|off - toggle one behaviour"])
-	NS.Print(L["/qam reward fit|value|manual - how the reward is chosen"])
-	NS.Print(L["/qam weapons on|off - let the addon pick weapons too"])
-	NS.Print(L["/qam trinkets on|off - let the addon pick trinkets too"])
+	NS.Print(L["/qam tier [1-5 auto|recommend] - how each reward tier is handled (1 hard to value, 2 upgrade, 3 sidegrade, 4 several, 5 most valuable)"])
+	NS.Print(L["/qam band <0-20> - item levels either side of your gear that count as a sidegrade"])
+	NS.Print(L["/qam weaponskill learnable|usable - which weapons count as wearable"])
+	NS.Print(L["/qam value vendor|auction|disenchant - what most valuable means"])
+	NS.Print(L["/qam prepick on|off - ask when a quest is accepted; /qam pick - open the pick window for the selected quest"])
 	NS.Print(L["/qam quality <1-5|off> - a reward of this quality or better is left to you (3 = rare)"])
 	NS.Print(L["/qam modifier shift|ctrl|alt|none - key that pauses the automation while held"])
 	NS.Print(L["/qam stats <stat> [<stat>...] | default - the stats this character wants, most important first"])
@@ -387,12 +408,6 @@ local function SetChoice(key, list, arg, label, names)
 	NS.OnSettingsChanged()
 end
 
-function NS.RewardModeName(mode)
-	if mode == "fit" then return L["best fit for my class and level"] end
-	if mode == "value" then return L["most valuable"] end
-	return L["leave it to me"]
-end
-
 function NS.DebugReport()
 	local version, build, buildDate, interface = GetBuildInfo()
 	NS.Print("QuestAutomator %s | client %s (%s, %s) | interface %s | locale %s | WOW_PROJECT_ID=%s",
@@ -437,12 +452,40 @@ function NS.PrintStatus()
 	NS.Print(L["Automation: %s%s"], OnOff(s.enabled), (NS.Auto and NS.Auto.SessionPaused()) and (" (" .. L["paused for this session"] .. ")") or "")
 	NS.Print(L["Accept quests: %s (low-level %s, repeatable %s) | hand in: %s (repeatable %s) | party escorts: %s"],
 		OnOff(s.accept), OnOff(s.acceptTrivial), OnOff(s.acceptRepeatable), OnOff(s.turnIn), OnOff(s.turnInRepeatable), OnOff(s.confirmPartyQuests))
-	NS.Print(L["Reward: %s | weapons: %s | trinkets: %s | nothing fits: %s"], NS.RewardModeName(s.rewardMode),
-		OnOff(s.weapons), OnOff(s.trinkets), s.fallbackToValue and L["take the most valuable"] or L["leave it to me"])
+	NS.PrintTiers()
+	NS.Print(L["Sidegrade band: %d item levels | wearable weapons: %s | most valuable means: %s | ask on accept: %s"], s.ilvlBand,
+		s.weaponProficiency == "usable" and L["weapons I have trained"] or L["weapons my class can learn"],
+		s.valueSource == "auction" and L["auction value"] or (s.valueSource == "disenchant" and L["disenchant value"] or L["vendor price"]),
+		OnOff(s.prePickUI))
 	NS.Print(L["Left to me from quality: %s"], s.manualQuality >= 0 and NS.QualityName(s.manualQuality) or L["never"])
 	NS.Print(L["Pause key: %s | announcements: %s"], s.modifier, OnOff(s.announce))
 	if NS.Rules and NS.Rules.PrintProfile then NS.Rules.PrintProfile() end
 	if NS.Auto and NS.Auto.PrintContext then NS.Auto.PrintContext() end
+end
+
+function NS.TierActionNames()
+	return { auto = L["pick it automatically"], recommend = L["recommend only (glow, window stays open)"] }
+end
+
+-- "auto 2 3 5 / ask 1 4" for tooltips.
+function NS.TierSummaryShort()
+	local s = NS.db.settings
+	local auto, ask = {}, {}
+	for _, n in ipairs({ "1", "2", "3", "4", "5" }) do
+		if s[NS.Engine.TIER_SETTING[n]] == "auto" then auto[#auto + 1] = n else ask[#ask + 1] = n end
+	end
+	return string.format("%s %s / %s %s", L["auto"], table.concat(auto, " "), L["recommend"], table.concat(ask, " "))
+end
+
+function NS.PrintTiers()
+	local s = NS.db.settings
+	local names = NS.TierActionNames()
+	local bits = {}
+	for _, n in ipairs({ "1", "2", "3", "4", "5" }) do
+		local action = s[NS.Engine.TIER_SETTING[n]]
+		bits[#bits + 1] = string.format("%s %s=%s", n, NS.Engine.TierName(n), action == "auto" and L["auto"] or L["recommend"])
+	end
+	NS.Print(L["Reward tiers: %s"], table.concat(bits, " | "))
 end
 
 SLASH_QUESTAUTOMATOR1 = "/qam"
@@ -477,15 +520,37 @@ SlashCmdList["QUESTAUTOMATOR"] = function(msg)
 		NS.SetFlag("confirmPartyQuests", rest, L["Accept escorts started by the party"])
 	elseif cmd == "announce" or cmd == "chat" then
 		NS.SetFlag("announce", rest, L["Announcements"])
-	elseif cmd == "reward" or cmd == "rewards" or cmd == "mode" then
-		SetChoice("rewardMode", NS.REWARD_MODES, rest, L["Reward choice"],
-			{ fit = NS.RewardModeName("fit"), value = NS.RewardModeName("value"), manual = NS.RewardModeName("manual") })
-	elseif cmd == "weapons" then
-		NS.SetFlag("weapons", rest, L["Pick weapons too"])
-	elseif cmd == "trinkets" or cmd == "trinket" then
-		NS.SetFlag("trinkets", rest, L["Pick trinkets too"])
-	elseif cmd == "fallback" then
-		NS.SetFlag("fallbackToValue", rest, L["Nothing fits: take the most valuable"])
+	elseif cmd == "tier" or cmd == "tiers" then
+		-- /qam tier            -> list;  /qam tier 3 auto|recommend
+		local n, action = rest:match("^(%d)%s*(%a*)$")
+		if n and NS.Engine.TIER_SETTING[n] then
+			if action ~= "" then
+				SetChoice(NS.Engine.TIER_SETTING[n], NS.TIER_ACTIONS, action, L["Tier %s (%s)"]:format(n, NS.Engine.TierName(n)), NS.TierActionNames())
+			else
+				NS.Print("%s: %s", L["Tier %s (%s)"]:format(n, NS.Engine.TierName(n)), NS.TierActionNames()[s[NS.Engine.TIER_SETTING[n]]])
+			end
+		else
+			NS.PrintTiers()
+		end
+	elseif cmd == "band" or cmd == "ilvl" then
+		local v = tonumber(rest)
+		if v then
+			s.ilvlBand = math.max(0, math.min(20, math.floor(v)))
+			NS.OnSettingsChanged()
+		elseif rest ~= "" then
+			NS.Print(L["Valid values: %s"], "0-20")
+		end
+		NS.Print("%s: %d", L["Sidegrade band (item levels)"], s.ilvlBand)
+	elseif cmd == "weaponskill" or cmd == "weapons" then
+		SetChoice("weaponProficiency", NS.WEAPON_PROFICIENCIES, rest, L["Wearable weapons"],
+			{ learnable = L["weapons my class can learn"], usable = L["weapons I have trained"] })
+	elseif cmd == "value" then
+		SetChoice("valueSource", NS.VALUE_SOURCES, rest, L["Most valuable means"],
+			{ vendor = L["vendor price"], auction = L["auction value"], disenchant = L["disenchant value"] })
+	elseif cmd == "prepick" or cmd == "ask" then
+		NS.SetFlag("prePickUI", rest, L["Ask me when I accept a quest"])
+	elseif cmd == "pick" then
+		if NS.PrePick and NS.PrePick.Command then NS.PrePick.Command(rest) else NS.Print(L["The pick window is not loaded."]) end
 	elseif cmd == "quality" then
 		local arg = rest:lower()
 		if arg == "off" or arg == "never" or arg == "none" then

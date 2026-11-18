@@ -482,17 +482,31 @@ function Auto.TakeReward(questID, index, decision)
 	state.pending = nil
 	if decision and decision.choice then
 		NS.chardb.counts.chosen = NS.chardb.counts.chosen + 1
-		NS.Announce(L["Reward: %s (%s)"], Rewards.ChoiceLabel(decision.choice), Rewards.Describe(decision))
+		NS.Announce(L["Reward: %s (%s: %s)"], Rewards.ChoiceLabel(decision.choice), NS.Engine.TierName(decision.tier), NS.Engine.Describe(decision))
 	end
 	NS.Log("act", "complete: reward %d for %s", index, tostring(questID))
 	NS.Call("GetQuestReward", index)
 end
 
-function Auto.LeaveChoice(reason, decision)
+-- The window stays open; the glow (Glow.lua) marks decision.index.
+function Auto.LeaveChoice(decision)
 	state.pending = nil
 	NS.chardb.counts.left = NS.chardb.counts.left + 1
-	NS.Log("skip", "complete: left to the player (%s)", reason)
-	NS.Announce(L["Choose the reward yourself: %s."], Rewards.ReasonText(reason, decision))
+	NS.Log("skip", "complete: left to the player (tier %s, %s)", tostring(decision and decision.tier), tostring(decision and decision.reason))
+	if decision and decision.choice then
+		NS.Announce(L["Choose the reward yourself: %s. Suggested: %s."], NS.Engine.LeaveReasonText(decision), Rewards.ChoiceLabel(decision.choice))
+	else
+		NS.Announce(L["Choose the reward yourself: %s."], NS.Engine.LeaveReasonText(decision))
+	end
+end
+
+-- Settings view for one evaluation: the stored settings plus the pre-pick made at
+-- accept time for this quest (Rewards/Engine read settings.prePickItemID).
+function Auto.SettingsFor(questID)
+	local s = NS.db.settings
+	local pre = questID and NS.chardb and NS.chardb.prePicks and NS.chardb.prePicks[questID] or nil
+	if not pre then return s end
+	return setmetatable({ prePickItemID = pre }, { __index = s })
 end
 
 function Auto.Choose(questID, attempt)
@@ -502,10 +516,10 @@ function Auto.Choose(questID, attempt)
 		return
 	end
 	local choices = Rewards.Gather(n)
-	local decision = Rewards.Evaluate(choices, NS.db.settings, Rules.Player())
+	local decision = Rewards.Evaluate(choices, Auto.SettingsFor(questID), Rules.Player())
 	if decision.pending then
 		if attempt >= Auto.MAX_LOAD_TRIES then
-			Auto.LeaveChoice("pending")
+			Auto.LeaveChoice({ reason = "pending" })
 			return
 		end
 		for _, c in ipairs(choices) do
@@ -515,10 +529,10 @@ function Auto.Choose(questID, attempt)
 		NS.After(Auto.RETRY_DELAY, function() Auto.Retry(questID, attempt) end)
 		return
 	end
-	if decision.index then
+	if decision.index and decision.action == "auto" then
 		Auto.TakeReward(questID, decision.index, decision)
 	else
-		Auto.LeaveChoice(decision.reason, decision)
+		Auto.LeaveChoice(decision)
 	end
 end
 

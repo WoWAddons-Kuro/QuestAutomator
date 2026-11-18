@@ -84,21 +84,55 @@ local function Build()
 		L["Accept escorts started by the party"],
 		L["Answer the confirmation pop-up that appears when a party member starts an escort quest."])
 
-	Dropdown(category, "QAM_REWARD_MODE", "rewardMode", NS.REWARD_MODES, NS.RewardModeName,
-		L["Reward choice"],
-		L["Best fit compares the armour class you wear at your level and the stats your class wants. Most valuable takes the reward with the highest vendor price."])
+	-- Reward priority engine (Engine.lua). One dropdown per tier.
+	local function ActionName(v) return v == "auto" and L["pick it automatically"] or L["recommend only (glow, window stays open)"] end
+	Dropdown(category, "QAM_TIER1", "tier1Action", NS.TIER_ACTIONS, ActionName,
+		L["Hard to value (trinket, relic, Use or proc effect, not equipment)"],
+		L["When any reward is a trinket, a relic, has a Use or chance-on-hit effect, or is not equipment at all. Recommend is the safe choice: the addon cannot weigh these."])
+	Dropdown(category, "QAM_TIER2", "tier2Action", NS.TIER_ACTIONS, ActionName,
+		L["One reward is a clear upgrade"],
+		L["Exactly one wearable reward has a higher item level than what you wear in that slot (by more than the sidegrade band)."])
+	Dropdown(category, "QAM_TIER3", "tier3Action", NS.TIER_ACTIONS, ActionName,
+		L["One reward is a sidegrade"],
+		L["Exactly one wearable reward is within the sidegrade band of what you wear in that slot."])
+	Dropdown(category, "QAM_TIER4", "tier4Action", NS.TIER_ACTIONS, ActionName,
+		L["Two or more rewards are upgrades or sidegrades"],
+		L["Several wearable rewards would improve or match your gear. Recommend lets you weigh them; the glow marks the one with the biggest item-level gain."])
+	Dropdown(category, "QAM_TIER5", "tier5Action", NS.TIER_ACTIONS, ActionName,
+		L["Nothing wearable: most valuable"],
+		L["No reward fits your class's best armour class or weapon skills: take the one worth the most."])
 	Dropdown(category, "QAM_MANUAL_QUALITY", "manualQuality", NS.QUALITY_CHOICES, NS.QualityName,
 		L["Leave the choice to me from quality"],
 		L["When any reward is of this quality or better, the reward window stays open for you to choose."])
-	Checkbox(category, "QAM_WEAPONS", "weapons",
-		L["Pick weapons too"],
-		L["Off by default: whenever a weapon is among the rewards, the whole choice is left to you. On, weapons are scored by your class's weapon skills and the damage per second."])
-	Checkbox(category, "QAM_TRINKETS", "trinkets",
-		L["Pick trinkets too"],
-		L["Off by default: whenever a trinket is among the rewards, the whole choice is left to you. On, a trinket counts as a neutral-slot item scored by its stats; Use effects are not read."])
-	Checkbox(category, "QAM_FALLBACK", "fallbackToValue",
-		L["Nothing fits: take the most valuable"],
-		L["When no reward is usable by your class, take the one with the highest vendor price instead of leaving the choice to you."])
+	Dropdown(category, "QAM_ILVL_BAND", "ilvlBand", { 0, 1, 2, 3, 4, 5, 6, 8, 10 }, function(v) return tostring(v) end,
+		L["Sidegrade band (item levels)"],
+		L["A reward within this many item levels of what you wear counts as a sidegrade; more than this above it is an upgrade."])
+	Dropdown(category, "QAM_WEAPON_PROFICIENCY", "weaponProficiency", NS.WEAPON_PROFICIENCIES,
+		function(v) return v == "usable" and L["weapons I have trained"] or L["weapons my class can learn"] end,
+		L["Wearable weapons"],
+		L["Which weapons count as wearable: every weapon your class can train at some trainer, or only those you have the skill for right now."])
+	Dropdown(category, "QAM_VALUE_SOURCE", "valueSource", NS.VALUE_SOURCES,
+		function(v) return v == "auction" and L["auction value"] or (v == "disenchant" and L["disenchant value"] or L["vendor price"]) end,
+		L["Most valuable means"],
+		L["How the value of a reward is measured. Auction and disenchant values need a provider addon; without one the vendor price is used."])
+	Checkbox(category, "QAM_PREPICK", "prePickUI",
+		L["Ask me when I accept a quest"],
+		L["When a quest you accept has a reward the addon would only recommend, show the choices right away so the hand-in can still be automatic."])
+
+	-- Read-only: the class stat weights used to break ties inside a tier.
+	do
+		local player = NS.Rules.Player()
+		local ordered = {}
+		for key, weight in pairs(player.weights) do ordered[#ordered + 1] = { key = key, weight = weight } end
+		table.sort(ordered, function(a, b) if a.weight ~= b.weight then return a.weight > b.weight end return a.key < b.key end)
+		local bits = {}
+		for i = 1, math.min(8, #ordered) do bits[#bits + 1] = string.format("%s %.2f", NS.Rules.StatName(ordered[i].key), ordered[i].weight) end
+		local text = string.format(L["Tie-break stat weights for %s: %s"], tostring(player.class), table.concat(bits, ", "))
+		if Settings.CreateElementInitializer and category.GetLayout then
+			local init = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = text })
+			category:GetLayout():AddInitializer(init)
+		end
+	end
 	Dropdown(category, "QAM_MODIFIER", "modifier", NS.MODIFIERS,
 		function(v) return v == "NONE" and L["none"] or v end,
 		L["Pause key"],

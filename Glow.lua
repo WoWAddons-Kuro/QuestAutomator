@@ -124,7 +124,8 @@ local function FrameShown(frame)
 	return ok and shown == true
 end
 
--- Would the automation pick a reward here? The decision (with index) when it would,
+-- What the engine favours here: the decision (index = the reward to glow, action =
+-- whether it would be clicked) when it evaluated,
 -- { pending = true } plus the choices while item data is missing, nil otherwise.
 function Glow.Decide(ctx)
 	if not NS.db then return nil end
@@ -138,10 +139,12 @@ function Glow.Decide(ctx)
 	local n = NS.SafeNumber(ctx.source.Count()) or 0
 	if n < 2 then return nil, "nochoice" end
 	local choices = Rewards.Gather(n, ctx.source)
-	local decision = Rewards.Evaluate(choices, s, Rules.Player())
+	-- The glow marks the engine's pick in both "auto" and "recommend": recommend is
+	-- exactly when the player needs the hint. The pre-pick for this quest applies.
+	local decision = Rewards.Evaluate(choices, NS.Auto.SettingsFor(questID), Rules.Player())
 	if decision.pending then return decision, "pending", choices, decision end
 	if not decision.index then return nil, decision.reason, choices, decision end
-	return decision, "pick", choices, decision
+	return decision, decision.action, choices, decision
 end
 
 local function FindButton(ctx, index)
@@ -247,7 +250,7 @@ function Glow.WhyText(why, decision)
 	if why == "repeatable" then return L["repeatable quests are not handed in automatically"] end
 	if why == "nochoice" then return L["there is nothing to choose"] end
 	if why == "pending" then return L["the item data did not load in time"] end
-	return Rewards.ReasonText(why, decision)
+	return NS.Engine.LeaveReasonText(decision)
 end
 
 local function ChoiceLine(c)
@@ -270,17 +273,8 @@ local function ChoiceLine(c)
 		if c.loaded == false then
 			bits[#bits + 1] = L["item data not loaded"]
 		else
-			bits[#bits + 1] = NS.FormatMoney((c.sellPrice or 0) * (c.count or 1))
-		end
-		if c.fit then
-			if c.fit.score > 0 then
-				bits[#bits + 1] = string.format(L["score %.1f"], c.fit.score)
-			elseif c.fit.why == "notgear" then
-				bits[#bits + 1] = L["not equipment"]
-			else
-				bits[#bits + 1] = L["cannot use"]
-			end
-			if c.fit.otherKind then bits[#bits + 1] = L["not the preferred weapon kind"] end
+			bits[#bits + 1] = NS.FormatMoney(c.value or (c.sellPrice or 0) * (c.count or 1))
+			bits[#bits + 1] = NS.Engine.ItemReasonText(c)
 		end
 	end
 	NS.Print("  %d. %s: %s", c.index, Rewards.ChoiceLabel(c), table.concat(bits, " | "))
@@ -299,7 +293,7 @@ function Glow.Explain()
 	local decision, why, choices, evaluated = Glow.Decide(ctx)
 	for _, c in ipairs(choices or {}) do ChoiceLine(c) end
 	if decision and decision.index then
-		NS.Print(L["Would take #%d: %s"], decision.index, Rewards.Describe(decision))
+		NS.Print(L["Would take #%d: %s"], decision.index, string.format("%s: %s%s", NS.Engine.TierName(decision.tier), NS.Engine.Describe(decision), decision.action == "auto" and "" or (" - " .. L["recommend only"])))
 	else
 		NS.Print(L["Left to you: %s"], Glow.WhyText(why, evaluated))
 	end

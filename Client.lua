@@ -259,6 +259,91 @@ function Forever.MaxLevel(fallback) return SharedMaxLevel(fallback) end
 function Era.MaxLevel(fallback) return SharedMaxLevel(fallback) end
 
 --------------------------------------------------------------------------------
+-- Equipped gear. WornItemLevel(equipLoc) -> { itemLevel, slotID, link } for the
+-- weakest slot the piece could go into (paired rings/trinkets/weapons compare
+-- against the lower one), itemLevel 0 and link nil for an empty slot; nil when
+-- the equipLoc is not a comparable slot. Shared: both clients have
+-- GetInventoryItemLink and C_Item.GetItemInfo.
+--------------------------------------------------------------------------------
+local function SharedWornItemLevel(equipLoc)
+	local slots = NS.Rules.EQUIP_SLOTS[equipLoc or ""]
+	if not slots or NS.Rules.UNCOMPARED_SLOTS[equipLoc or ""] then return nil end
+	local weakest
+	for _, slotID in ipairs(slots) do
+		local link = NS.SafeString(SafeCall("GetInventoryItemLink", "player", slotID))
+		local level = 0
+		if link then
+			local _, _, _, ilvl = SafeCall("C_Item.GetItemInfo", link)
+			level = NS.SafeNumber(ilvl) or 0
+		end
+		if not weakest or level < weakest.itemLevel then
+			weakest = { itemLevel = level, slotID = slotID, link = link }
+		end
+	end
+	-- A two-hander replaces main hand AND off hand: compare against the stronger
+	-- of the two so a 2H is not called an upgrade over an empty off hand alone.
+	if equipLoc == "INVTYPE_2HWEAPON" then
+		local offLink = NS.SafeString(SafeCall("GetInventoryItemLink", "player", 17))
+		if offLink then
+			local _, _, _, offIlvl = SafeCall("C_Item.GetItemInfo", offLink)
+			offIlvl = NS.SafeNumber(offIlvl) or 0
+			if offIlvl > weakest.itemLevel then weakest = { itemLevel = offIlvl, slotID = 17, link = offLink } end
+		end
+	end
+	return weakest
+end
+function Forever.WornItemLevel(equipLoc) return SharedWornItemLevel(equipLoc) end
+function Era.WornItemLevel(equipLoc) return SharedWornItemLevel(equipLoc) end
+
+--------------------------------------------------------------------------------
+-- Item value in copper for the "most valuable" tier. valueSource "vendor" is the
+-- only provider today; "auction" and "disenchant" fall back to vendor until a
+-- provider (Auctionator / TSM / a DE library) is registered via
+-- Client.RegisterValueProvider(name, fn(link, count) -> copper or nil).
+--------------------------------------------------------------------------------
+local valueProviders = {}
+function Client.RegisterValueProvider(name, fn)
+	valueProviders[name] = fn
+	NS.features["value:" .. name] = true
+end
+
+local function SharedItemValue(link, count, sellPrice, valueSource)
+	count = count or 1
+	local provider = valueSource and valueSource ~= "vendor" and valueProviders[valueSource] or nil
+	if provider and link then
+		local ok, copper = pcall(provider, link, count)
+		copper = ok and NS.SafeNumber(copper) or nil
+		if copper and copper > 0 then return copper, valueSource end
+	end
+	return (NS.SafeNumber(sellPrice) or 0) * count, "vendor"
+end
+function Forever.ItemValue(link, count, sellPrice, valueSource) return SharedItemValue(link, count, sellPrice, valueSource) end
+function Era.ItemValue(link, count, sellPrice, valueSource) return SharedItemValue(link, count, sellPrice, valueSource) end
+
+--------------------------------------------------------------------------------
+-- Weapon skill. HasWeaponSkill(subclass) -> true / false / nil (cannot tell).
+-- Era: the skill window (GetNumSkillLines / GetSkillLineInfo) lists trained
+-- weapon skills by name. Forever: weapon skills were removed with the trait
+-- system; every learnable weapon counts as usable (nil = cannot tell).
+--------------------------------------------------------------------------------
+function Forever.HasWeaponSkill(subclass)
+	return nil
+end
+function Era.HasWeaponSkill(subclass)
+	local wanted = NS.SafeString(SafeCall("C_Item.GetItemSubClassInfo", NS.Rules.CLASS_WEAPON, subclass))
+		or NS.Rules.WEAPON_SKILL_NAMES[subclass]
+	if not wanted then return nil end
+	local n = NS.SafeNumber(SafeCall("GetNumSkillLines"))
+	if not n then return nil end
+	for i = 1, n do
+		local name, isHeader = SafeCall("GetSkillLineInfo", i)
+		name = NS.SafeString(name)
+		if name and not NS.SafeBool(isHeader) and name == wanted then return true end
+	end
+	return false
+end
+
+--------------------------------------------------------------------------------
 -- Tooltip stat format strings, keyed by ITEM_MOD_* tag (plus DPS_TEMPLATE,
 -- ARMOR_TEMPLATE, ITEM_SPELL_TRIGGER_ONEQUIP). Rewards.FormatsFor tries the
 -- client's live global first, then these. "%c" = sign, "%s"/"%d" = number,
