@@ -567,9 +567,10 @@ end
 --------------------------------------------------------------------------------
 -- Results and party confirmations.
 --------------------------------------------------------------------------------
-function Auto.OnQuestAccepted(questID)
+-- Forever passes (questID); Era passes (questIndex, questID) - QuestLogDocumentation.
+function Auto.OnQuestAccepted(a, b)
 	if not NS.loaded then return end
-	questID = NS.SafeNumber(questID)
+	local questID = NS.SafeNumber(b) or NS.SafeNumber(a)
 	local mine = state.byUs.accept
 	if mine == nil then return end
 	if mine ~= true and questID and mine ~= questID then return end

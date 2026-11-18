@@ -120,7 +120,8 @@ local function Build()
 		L["When a quest you accept has a reward the addon would only recommend, show the choices right away so the hand-in can still be automatic."])
 
 	-- Read-only: the class stat weights used to break ties inside a tier.
-	do
+	-- Retail-only layout call; a failure here must not take the whole page down.
+	pcall(function()
 		local player = NS.Rules.Player()
 		local ordered = {}
 		for key, weight in pairs(player.weights) do ordered[#ordered + 1] = { key = key, weight = weight } end
@@ -132,7 +133,7 @@ local function Build()
 			local init = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = text })
 			category:GetLayout():AddInitializer(init)
 		end
-	end
+	end)
 	Dropdown(category, "QAM_MODIFIER", "modifier", NS.MODIFIERS,
 		function(v) return v == "NONE" and L["none"] or v end,
 		L["Pause key"],
