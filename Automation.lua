@@ -158,7 +158,11 @@ local function Defer(stage, fn)
 	state.token = state.token + 1
 	local token = state.token
 	NS.After(0, function()
-		if token ~= state.token or state.stage ~= stage then return end
+		if token ~= state.token or state.stage ~= stage then
+			NS.Log("skip", "%s: deferred action dropped (token %s/%s, stage now %s)", stage,
+				tostring(token), tostring(state.token), tostring(state.stage))
+			return
+		end
 		fn()
 	end)
 end
@@ -266,35 +270,50 @@ function Auto.ActGossip()
 		return
 	end
 	local s = NS.db.settings
+	local active = NS.Call("C_GossipInfo.GetActiveQuests")
+	local available = NS.Call("C_GossipInfo.GetAvailableQuests")
+	active = type(active) == "table" and active or {}
+	available = type(available) == "table" and available or {}
+	NS.Log("info", "gossip: %d active, %d available (turnIn %s, accept %s)", #active, #available, tostring(s.turnIn), tostring(s.accept))
 	if s.turnIn then
-		local active = NS.Call("C_GossipInfo.GetActiveQuests")
-		for _, info in ipairs(type(active) == "table" and active or {}) do
+		for _, info in ipairs(active) do
 			local questID = NS.SafeNumber(info.questID)
 			local repeatable = IsRepeatable(info.repeatable, info.frequency)
-			if questID and NS.SafeBool(info.isComplete) and Auto.MayTurnIn(questID, repeatable) and TryOnce("turnin", questID) then
-				local title = NS.SafeString(info.title)
+			local title = NS.SafeString(info.title)
+			local ok, reason = true, nil
+			if not questID then ok, reason = false, "no questID"
+			elseif not NS.SafeBool(info.isComplete) then ok, reason = false, "not complete"
+			else ok, reason = Auto.MayTurnIn(questID, repeatable) end
+			if ok and not TryOnce("turnin", questID) then ok, reason = false, "already tried" end
+			if ok then
 				state.offered[questID] = { title = title, repeatable = repeatable, trivial = NS.SafeBool(info.isTrivial), turnIn = true }
 				NS.Log("act", "gossip: hand in %s (%d)", tostring(title), questID)
 				AwaitAnswer(questID, title)
 				NS.Call("C_GossipInfo.SelectActiveQuest", questID)
 				return
 			end
+			NS.Log("skip", "gossip: active %s (%s): %s", tostring(title), tostring(info.questID), tostring(reason))
 		end
 	end
 	if s.accept then
-		local available = NS.Call("C_GossipInfo.GetAvailableQuests")
-		for _, info in ipairs(type(available) == "table" and available or {}) do
+		for _, info in ipairs(available) do
 			local questID = NS.SafeNumber(info.questID)
 			local repeatable = IsRepeatable(info.repeatable, info.frequency)
 			local trivial = NS.SafeBool(info.isTrivial)
-			if questID and not OnQuest(questID) and Auto.MayAccept(questID, trivial, repeatable) and TryOnce("accept", questID) then
-				local title = NS.SafeString(info.title)
+			local title = NS.SafeString(info.title)
+			local ok, reason = true, nil
+			if not questID then ok, reason = false, "no questID"
+			elseif OnQuest(questID) then ok, reason = false, "already on quest"
+			else ok, reason = Auto.MayAccept(questID, trivial, repeatable) end
+			if ok and not TryOnce("accept", questID) then ok, reason = false, "already tried" end
+			if ok then
 				state.offered[questID] = { title = title, repeatable = repeatable, trivial = trivial }
 				NS.Log("act", "gossip: take %s (%d)", tostring(title), questID)
 				AwaitAnswer(questID, title)
 				NS.Call("C_GossipInfo.SelectAvailableQuest", questID)
 				return
 			end
+			NS.Log("skip", "gossip: available %s (%s): %s", tostring(title), tostring(info.questID), tostring(reason))
 		end
 	end
 end
