@@ -1,4 +1,4 @@
-## Interface: 16001, 11509
+## Interface: 16001
 ## Title: Quest Automator
 ## Title-zhCN: 智能任务 Quest Automator
 ## Notes: Accepts and turns in quests for you and picks the reward that fits your class and level, or the most valuable one. Hold Shift while talking to an NPC to do it by hand.
