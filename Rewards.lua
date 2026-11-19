@@ -359,15 +359,36 @@ Rewards.KINDS = {
 }
 
 -- The rewards to score, or nil and the reason the choice is handed to the player.
-function Rewards.ApplyKinds(items, settings)
+-- A guarded kind (weapon / trinket with its setting off) hands off only when the
+-- choice is AMBIGUOUS: some other choice is something the character could wear.
+-- When everything else is unwearable (a druid offered a staff or mail leggings)
+-- the guarded item is the only usable option and is scored like anything else.
+function Rewards.ApplyKinds(items, settings, player)
 	for _, kind in ipairs(Rewards.KINDS) do
 		if not settings[kind.key] then
+			local guarded = false
 			for _, c in ipairs(items) do
-				if kind.Is(c) then return nil, kind.reason end
+				if kind.Is(c) then guarded = true break end
+			end
+			if guarded then
+				for _, c in ipairs(items) do
+					if not kind.Is(c) and (player == nil or Rewards.Wearable(c, player)) then return nil, kind.reason end
+				end
 			end
 		end
 	end
 	return items
+end
+
+-- Could the character wear this at all (armour class / weapon skill), stats aside?
+function Rewards.Wearable(c, player)
+	if not player or c.usable == false then return false end
+	if c.classID == Rules.CLASS_ARMOR then
+		return Rules.ArmorScore(player.class, player.level, c.subclassID, c.equipLoc) > 0
+	elseif Rules.IsWeapon(c.classID, c.subclassID) then
+		return Rules.WeaponScore(player.class, c.subclassID) > 0
+	end
+	return false
 end
 
 -- Decision: { index, choice, reason } when the addon picks, { reason } when the
@@ -392,7 +413,7 @@ function Rewards.Evaluate(choices, settings, player)
 		if notable then return { reason = "quality", choice = notable, quality = notable.quality } end
 	end
 	-- Weapons and trinkets are the player's call unless allowed, in either mode.
-	local pool, handOff = Rewards.ApplyKinds(items, settings)
+	local pool, handOff = Rewards.ApplyKinds(items, settings, player)
 	if not pool then return { reason = handOff } end
 	if settings.rewardMode == "value" then return Rewards.ByValue(pool, "value") end
 
