@@ -17,6 +17,10 @@
 Locales\enUS.lua
 Locales\zhCN.lua
 Core.lua
+Client\Client.lua
+Client\Client_Forever.lua
+Client\Client_ClassicEra.lua
+Client\Client_Select.lua
 Rules.lua
 Rewards.lua
 Models\PrePickModel.lua
@@ -27,5 +31,6 @@ XPBar.lua
 UI\State.lua
 UI\PrepickData.lua
 UI\Prepick.lua
+UI\SettingsLayout.lua
 Settings.lua
 Minimap.lua

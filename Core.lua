@@ -410,6 +410,7 @@ function NS.DebugReport()
 		local err = NS.eventErrors[event]
 		NS.Print("  %s%s|r %s%s", color, status, event, err and (" |cffff8000last error: " .. err .. "|r") or "")
 	end
+	if NS.Client and NS.Client.DebugReport then NS.Client.DebugReport() end
 	if NS.Rules and NS.Rules.DebugReport then NS.Rules.DebugReport() end
 	if NS.Auto and NS.Auto.DebugReport then NS.Auto.DebugReport() end
 	if NS.Glow and NS.Glow.DebugReport then NS.Glow.DebugReport() end

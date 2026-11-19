@@ -28,8 +28,14 @@ function methods:GetWidth() return self.width end
 function methods:GetHeight() return self.height end
 function methods:SetText(t) self.text = t or "" end
 function methods:GetText() return self.text end
-function methods:GetStringWidth() return #self.text * 5 end
-function methods:GetStringHeight() return math.max(1, math.ceil(#self.text * 5 / math.max(1, self.width))) * 12 end
+local fontScale = 1
+local function printableWidth(text)
+	text = text:gsub('|c%x%x%x%x%x%x%x%x', ''):gsub('|r', '')
+	return #text * 5 * fontScale
+end
+function methods:GetStringWidth() return printableWidth(self.text) end
+function methods:GetStringHeight() return math.max(1, math.ceil(printableWidth(self.text) / math.max(1, self.width))) * 12 * fontScale end
+function methods:SetHitRectInsets(...) self.hitRectInsets = {...} end
 function methods:SetPoint(...) self.point = {...} end
 function methods:GetPoint() return unpack(self.point or {"CENTER", nil, "CENTER", 0, 0}) end
 function methods:ClearAllPoints() self.point = nil end
@@ -93,6 +99,9 @@ IsShiftKeyDown = function() return false end
 IsAltKeyDown = IsShiftKeyDown
 IsControlKeyDown = IsShiftKeyDown
 GetBuildInfo = function() return "mock", "mock", "mock", modern and 16001 or 11509 end
+-- Flavour selection (Client/Client_Select.lua) keys off WOW_PROJECT_ID == WOW_PROJECT_CLASSIC.
+WOW_PROJECT_MAINLINE, WOW_PROJECT_CLASSIC = 1, 2
+WOW_PROJECT_ID = modern and WOW_PROJECT_MAINLINE or WOW_PROJECT_CLASSIC
 GetQuestID = function() return 363 end
 GetTitleText = function() return "Rude Awakening" end
 QuestFlagsPVP = function() return false end
@@ -171,13 +180,60 @@ end
 emit("ADDON_LOADED", "QuestAutomator")
 emit("PLAYER_LOGIN")
 drain()
-assert(NS.loaded and NS.settingsCategory and not NS.Client and not NS.Engine)
+assert(NS.loaded and NS.settingsCategory and not NS.Engine)
+assert(NS.Client and NS.Client.flavour == (modern and "forever" or "classic_era"), "wrong client flavour selected")
+for _, name in ipairs(NS.Client.INTERFACE) do assert(type(NS.Client[name]) == "function", "client interface missing " .. name) end
 assert(NS.db.settings.tier2Action == "auto" and type(NS.chardb.prePicks) == "table")
 assert(SlashCmdList.QUESTAUTOMATOR and not SlashCmdList.SMARTQUESTAUTOMATION)
 assert(NS.RegisterSettings())
 QuestAutomatorOptions:Show(); QuestAutomatorOptions:Update()
 assert(#messages == 0, table.concat(messages, "\n"))
 print("PASS TOC load, settings construction/update, defaults, and original module boundaries")
+
+-- Test the actual settings widgets, not just the pure flow helper, under width
+-- and text-size changes. Geometry metadata and frame anchors must agree.
+local beforeSettings = {}
+for key, value in pairs(NS.db.settings) do beforeSettings[key] = value end
+local rowsChecked = 0
+local function checkRows(entries, owner, leftInset)
+	local previousBottom = 0
+	for _, entry in ipairs(entries) do
+		local widget = entry.widget
+		assert(entry.y >= previousBottom and entry.x >= 0)
+		assert(widget:GetHeight() == entry.height and widget:GetWidth() == entry.width)
+		assert(leftInset + entry.x + entry.width <= owner:GetWidth())
+		assert(widget.point[1] == 'TOPLEFT' and widget.point[2] == owner)
+		assert(widget.point[4] == leftInset + entry.x and widget.point[5] == -entry.y)
+		if widget.rows then checkRows(widget.rows, widget, 10) end
+		if widget.checkbox then assert(6 + widget.label:GetStringHeight() <= entry.height) end
+		if type(widget.text) == 'table' then assert(widget.text:GetStringHeight() <= entry.height) end
+		if widget.optionLayout then
+			assert(widget.optionsY + widget.optionLayout.height <= entry.height)
+			if widget.optionsX == 24 then assert(widget.optionsY >= 2 + widget.label:GetStringHeight() + 8) end
+			for _, cell in ipairs(widget.optionLayout.cells) do
+				assert(widget.optionsX + cell.x + cell.width <= entry.width)
+				assert(widget.optionsY + cell.y + cell.height <= entry.height)
+			end
+		end
+		previousBottom = entry.y + entry.height
+		assert(previousBottom <= owner:GetHeight())
+		rowsChecked = rowsChecked + 1
+	end
+end
+for _, scale in ipairs({1, 1.4}) do
+	fontScale = scale
+	for _, width in ipairs({360, 480, 620, 900}) do
+		QuestAutomatorOptions.scroll:SetWidth(width)
+		QuestAutomatorOptions.scroll.scripts.OnSizeChanged(QuestAutomatorOptions.scroll, width)
+		QuestAutomatorOptions:Update()
+		assert(QuestAutomatorOptions.content:GetWidth() == width)
+		checkRows(QuestAutomatorOptions.layoutRows, QuestAutomatorOptions.content, 16)
+	end
+end
+for key, value in pairs(beforeSettings) do assert(NS.db.settings[key] == value, 'layout changed setting ' .. key) end
+fontScale = 1
+QuestAutomatorOptions.scroll:SetWidth(620); QuestAutomatorOptions:Update()
+print('PASS measured settings layout: ' .. rowsChecked .. ' rows across widths/font sizes; no setting mutations')
 
 local beforeIndex = selectedLogIndex
 local source = NS.PrePickData.LogSource(101)
@@ -361,7 +417,7 @@ local function resetTurnIn(count)
 	IsShiftKeyDown = function() return false end
 	GetQuestMoneyToGet = function() return 0 end
 	GetQuestID = function() return 363 end
-	C_QuestLog.IsRepeatableQuest = function() return false end
+	NS.Client.IsQuestRepeatable = function() return false end  -- logic sees only the Client interface
 	questChoiceCount, cacheReady = count, true
 	resolverCalls, itemLoadRequests = 0, 0
 	C_Item.RequestLoadItemDataByID = function() itemLoadRequests = itemLoadRequests + 1 end
@@ -400,7 +456,7 @@ local blockedCases = {
 	function() IsShiftKeyDown = function() return true end end,
 	function() NS.db.ignoredQuests[363] = true end,
 	function() NS.db.ignoredNPCs[123] = true end,
-	function() C_QuestLog.IsRepeatableQuest = function() return true end end,
+	function() NS.Client.IsQuestRepeatable = function() return true end end,
 	function() GetQuestMoneyToGet = function() return 100 end end,
 }
 for _, block in ipairs(blockedCases) do

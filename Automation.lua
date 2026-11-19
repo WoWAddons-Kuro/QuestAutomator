@@ -24,7 +24,7 @@
 -- handler of the event has run, exactly as a click on Blizzard's button would.
 local ADDON, NS = ...
 local L = NS.L
-local Rules, Rewards = NS.Rules, NS.Rewards
+local Rules, Rewards, Client = NS.Rules, NS.Rewards, NS.Client
 local format = string.format
 local Auto = {}
 NS.Auto = Auto
@@ -212,10 +212,13 @@ function Auto.CheckAnswer(w)
 		tostring(w.title or (w.questID and ("#" .. w.questID)) or "?"))
 end
 
-local function IsRepeatable(repeatable, frequency)
-	if NS.SafeBool(repeatable) then return true end
-	frequency = NS.SafeNumber(frequency)
-	return frequency ~= nil and frequency > 0
+--------------------------------------------------------------------------------
+-- Repeatable: the offer's flag, or a recurring frequency. The numeric frequency
+-- encodings (Enum.QuestFrequency vs LE_QUEST_FREQUENCY_*) are decoded in Client/;
+-- here `offer.frequency` is a Client.FREQUENCY_* string.
+--------------------------------------------------------------------------------
+local function IsRepeatable(offer)
+	return offer.isRepeatable or Client.IsRecurringFrequency(offer.frequency)
 end
 
 function Auto.MayAccept(questID, trivial, repeatable)
@@ -236,7 +239,7 @@ end
 local function QuestTitle(questID, fallback)
 	local offered = questID and state.offered[questID]
 	if offered and offered.title then return offered.title end
-	local title = questID and NS.SafeString(NS.Call("C_QuestLog.GetTitleForQuestID", questID))
+	local title = questID and Client.QuestTitle(questID)
 	if title and title ~= "" then return title end
 	title = NS.SafeString(NS.Call("GetTitleText"))
 	if title and title ~= "" then return title end
@@ -268,14 +271,14 @@ function Auto.ActGossip()
 	local s = NS.db.settings
 	if s.turnIn then
 		local active = NS.Call("C_GossipInfo.GetActiveQuests")
-		for _, info in ipairs(type(active) == "table" and active or {}) do
-			local questID = NS.SafeNumber(info.questID)
-			local repeatable = IsRepeatable(info.repeatable, info.frequency)
-			if questID and (NS.SafeBool(info.isComplete) or NS.SafeBool(NS.Call("IsQuestComplete", questID))) and Auto.MayTurnIn(questID, repeatable) and TryOnce("turnin", questID) then
-				local title = NS.SafeString(info.title)
-				state.offered[questID] = { title = title, repeatable = repeatable, trivial = NS.SafeBool(info.isTrivial), turnIn = true }
-				NS.Log("act", "gossip: hand in %s (%d)", tostring(title), questID)
-				AwaitAnswer(questID, title)
+		for _, raw in ipairs(type(active) == "table" and active or {}) do
+			local q = Client.GossipQuestInfo(raw)
+			local questID = q.questID
+			local repeatable = IsRepeatable(q)
+			if questID and (q.isComplete or Client.IsQuestComplete(questID)) and Auto.MayTurnIn(questID, repeatable) and TryOnce("turnin", questID) then
+				state.offered[questID] = { title = q.title, repeatable = repeatable, trivial = q.isTrivial, turnIn = true }
+				NS.Log("act", "gossip: hand in %s (%d)", tostring(q.title), questID)
+				AwaitAnswer(questID, q.title)
 				NS.Call("C_GossipInfo.SelectActiveQuest", questID)
 				return
 			end
@@ -283,18 +286,24 @@ function Auto.ActGossip()
 	end
 	if s.accept then
 		local available = NS.Call("C_GossipInfo.GetAvailableQuests")
-		for _, info in ipairs(type(available) == "table" and available or {}) do
-			local questID = NS.SafeNumber(info.questID)
-			local repeatable = IsRepeatable(info.repeatable, info.frequency)
-			local trivial = NS.SafeBool(info.isTrivial)
-			if questID and not OnQuest(questID) and Auto.MayAccept(questID, trivial, repeatable) and TryOnce("accept", questID) then
-				local title = NS.SafeString(info.title)
-				state.offered[questID] = { title = title, repeatable = repeatable, trivial = trivial }
-				NS.Log("act", "gossip: take %s (%d)", tostring(title), questID)
-				AwaitAnswer(questID, title)
+		for _, raw in ipairs(type(available) == "table" and available or {}) do
+			local q = Client.GossipQuestInfo(raw)
+			local questID = q.questID
+			local repeatable = IsRepeatable(q)
+			local ok, reason = true, nil
+			if not questID then ok, reason = false, "no questID"
+			elseif OnQuest(questID) then ok, reason = false, "already on quest"
+			else ok, reason = Auto.MayAccept(questID, q.isTrivial, repeatable) end
+			if ok and not TryOnce("accept", questID) then ok, reason = false, "already tried" end
+			if ok then
+				state.offered[questID] = { title = q.title, repeatable = repeatable, trivial = q.isTrivial }
+				NS.Log("act", "gossip: take %s (%d)", tostring(q.title), questID)
+				AwaitAnswer(questID, q.title)
 				NS.Call("C_GossipInfo.SelectAvailableQuest", questID)
 				return
 			end
+			NS.Log("skip", "gossip: available %s (%s): %s [trivial=%s rep=%s freq=%s]", tostring(q.title), tostring(questID),
+				tostring(reason), tostring(q.isTrivial), tostring(q.isRepeatable), q.frequency)
 		end
 	end
 end
@@ -324,8 +333,8 @@ function Auto.ActGreeting()
 		local numActive = NS.SafeNumber(NS.Call("GetNumActiveQuests")) or 0
 		for i = 1, numActive do
 			local title, isComplete = NS.Call("GetActiveTitle", i)
-			local questID = NS.SafeNumber(NS.Call("GetActiveQuestID", i))
-			local repeatable = questID and NS.SafeBool(NS.Call("C_QuestLog.IsRepeatableQuest", questID)) or false
+			local questID = Client.ActiveQuestID(i)  -- nil on Era
+			local repeatable = Client.IsQuestRepeatable(questID)
 			title = NS.SafeString(title)
 			if NS.SafeBool(isComplete) and Auto.MayTurnIn(questID, repeatable) and TryOnce("turnin", questID or title or i) then
 				if questID then
@@ -340,21 +349,28 @@ function Auto.ActGreeting()
 	end
 	if s.accept then
 		local numAvailable = NS.SafeNumber(NS.Call("GetNumAvailableQuests")) or 0
+		NS.Log("info", "greeting: %d active, %d available (turnIn %s, accept %s)",
+			NS.SafeNumber(NS.Call("GetNumActiveQuests")) or 0, numAvailable, tostring(s.turnIn), tostring(s.accept))
 		for i = 1, numAvailable do
-			local isTrivial, frequency, isRepeatable, _, questID = NS.Call("GetAvailableQuestInfo", i)
-			questID = NS.SafeNumber(questID)
-			local trivial = NS.SafeBool(isTrivial)
-			local repeatable = IsRepeatable(isRepeatable, frequency)
+			local q = Client.AvailableQuestInfo(i)  -- questID is nil on Era
+			local questID = q.questID
+			local repeatable = IsRepeatable(q)
 			local title = NS.SafeString(NS.Call("GetAvailableTitle", i))
-			if not OnQuest(questID) and Auto.MayAccept(questID, trivial, repeatable) and TryOnce("accept", questID or title or i) then
+			local ok, reason = true, nil
+			if OnQuest(questID) then ok, reason = false, "already on quest"
+			else ok, reason = Auto.MayAccept(questID, q.isTrivial, repeatable) end
+			if ok and not TryOnce("accept", questID or title or i) then ok, reason = false, "already tried" end
+			if ok then
 				if questID then
-					state.offered[questID] = { title = title, repeatable = repeatable, trivial = trivial }
+					state.offered[questID] = { title = title, repeatable = repeatable, trivial = q.isTrivial }
 				end
 				NS.Log("act", "greeting: take %s (%s)", tostring(title), tostring(questID))
 				AwaitAnswer(questID, title)
 				NS.Call("SelectAvailableQuest", i)
 				return
 			end
+			NS.Log("skip", "greeting: available %d %s (%s): %s [trivial=%s rep=%s freq=%s raw=%s]", i, tostring(title), tostring(questID),
+				tostring(reason), tostring(q.isTrivial), tostring(q.isRepeatable), q.frequency, tostring(q.rawFrequency))
 		end
 	end
 end
@@ -383,8 +399,8 @@ function Auto.ActDetail(questStartItemID)
 	local offered = questID and state.offered[questID]
 	if not offered then
 		-- The player (or the server) opened this quest; apply the same rules as far as the client answers.
-		local trivial = questID and NS.SafeBool(NS.Call("C_QuestLog.IsQuestTrivial", questID)) or false
-		local repeatable = questID and NS.SafeBool(NS.Call("C_QuestLog.IsRepeatableQuest", questID)) or false
+		local trivial = Client.IsQuestTrivial(questID)
+		local repeatable = Client.IsQuestRepeatable(questID)
 		local ok, reason = Auto.MayAccept(questID, trivial, repeatable)
 		if not ok then
 			NS.Log("skip", "detail: %s (%s)", reason, tostring(questID))
@@ -425,7 +441,7 @@ local function TurnInAllowed(stage)
 	if offered then
 		repeatable = offered.repeatable
 	else
-		repeatable = questID and NS.SafeBool(NS.Call("C_QuestLog.IsRepeatableQuest", questID)) or false
+		repeatable = Client.IsQuestRepeatable(questID)
 	end
 	local ok, reason = Auto.MayTurnIn(questID, repeatable)
 	if not ok then

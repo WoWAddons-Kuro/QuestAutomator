@@ -141,7 +141,7 @@ function Glow.Decide(ctx)
 	if not (s.enabled and s.turnIn) then return nil, "off" end
 	if NS.Auto and NS.Auto.SessionPaused() then return nil, "paused" end
 	local questID = ctx.questID
-	local repeatable = questID and NS.SafeBool(NS.Call("C_QuestLog.IsRepeatableQuest", questID)) or false
+	local repeatable = NS.Client.IsQuestRepeatable(questID)
 	local ok, why = NS.Auto.MayTurnIn(questID, repeatable)
 	if not ok then return nil, why end
 	local n = NS.SafeNumber(ctx.source.Count()) or 0
@@ -302,7 +302,7 @@ function Glow.Explain()
 		NS.Print(L["No quest rewards are on screen. Open a quest in the log or talk to a quest giver, then try again."])
 		return false
 	end
-	local title = ctx.questID and NS.SafeString(NS.Call("C_QuestLog.GetTitleForQuestID", ctx.questID)) or nil
+	local title = ctx.questID and NS.Client.QuestTitle(ctx.questID) or nil
 	if not title or title == "" then title = NS.SafeString(NS.Call("GetTitleText")) end
 	if not title or title == "" then title = ctx.questID and ("#" .. ctx.questID) or "?" end
 	NS.Print(L["Rewards of %s (%s):"], title, ctx.questLog and L["quest log"] or L["quest giver"])
