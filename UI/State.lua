@@ -19,7 +19,9 @@ function UIState.PlaceholderLabel(label)
 end
 
 function UIState.PlaceholderTip(tip)
-	return L["This setting is saved for future use. It does not affect automation or reward selection."] .. "\n\n" .. (tip or "")
+	local notice = L["This setting is saved for future use. It does not affect automation or reward selection."]
+	if tip and tip ~= "" then return notice .. "\n\n" .. tip end
+	return notice
 end
 
 -- Core.InitDB runs at ADDON_LOADED, after every TOC file has loaded.

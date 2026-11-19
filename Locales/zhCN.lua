@@ -317,3 +317,7 @@ L["(pick unavailable)"] = "（预选不可用）"
 L["Pre-pick for %s: %s. Used at hand-in when automation is allowed."] = "%s 的预选：%s。允许自动化时会在交付时选择。"
 L["Show reward choices on accept. A saved selection is used at hand-in when automation is allowed; turning off this display does not clear saved picks."] = "接受任务时显示奖励。允许自动化时会在交付时使用预选；关闭此显示不会清除已保存的预选。"
 L["Uses original quest automation. Valid pre-picks override automatic reward recommendations. Controls marked Not implemented remain saved-only placeholders."] = "使用原版任务自动化。有效预选优先于自动推荐。标为尚未实现的控件仍仅保存状态。"
+
+-- Settings layout and product-facing headings.
+L["Reward selection"] = "奖励选择"
+L["Automatically accepts and turns in quests. Pre-pick rewards or use automatic selection. Settings marked Not implemented do not affect automation."] = "自动接受并交付任务。可以预选奖励或使用自动选择。标为尚未实现的设置不影响自动化。"

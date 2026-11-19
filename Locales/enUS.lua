@@ -304,3 +304,7 @@ L["(pick unavailable)"] = "(pick unavailable)"
 L["Pre-pick for %s: %s. Used at hand-in when automation is allowed."] = "Pre-pick for %s: %s. Used at hand-in when automation is allowed."
 L["Show reward choices on accept. A saved selection is used at hand-in when automation is allowed; turning off this display does not clear saved picks."] = "Show reward choices on accept. A saved selection is used at hand-in when automation is allowed; turning off this display does not clear saved picks."
 L["Uses original quest automation. Valid pre-picks override automatic reward recommendations. Controls marked Not implemented remain saved-only placeholders."] = "Uses original quest automation. Valid pre-picks override automatic reward recommendations. Controls marked Not implemented remain saved-only placeholders."
+
+-- Settings layout and product-facing headings.
+L["Reward selection"] = "Reward selection"
+L["Automatically accepts and turns in quests. Pre-pick rewards or use automatic selection. Settings marked Not implemented do not affect automation."] = "Automatically accepts and turns in quests. Pre-pick rewards or use automatic selection. Settings marked Not implemented do not affect automation."

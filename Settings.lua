@@ -7,6 +7,7 @@
 -- refreshed OnShow.
 local ADDON, NS = ...
 local L = NS.L
+local Layout = NS.SettingsLayout
 
 local optionsCategory, optionsFrame
 
@@ -26,7 +27,14 @@ end
 -- Widgets. Each returns a frame with :Update() reading the live setting.
 --------------------------------------------------------------------------------
 local function Check(parent, key, label, tip, onChange)
-	local cb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+	local holder = CreateFrame("Frame", nil, parent)
+	local cb = CreateFrame("CheckButton", nil, holder, "InterfaceOptionsCheckButtonTemplate")
+	cb:SetSize(26, 26)
+	cb:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, 0)
+	cb.Text:ClearAllPoints()
+	cb.Text:SetPoint("TOPLEFT", holder, "TOPLEFT", 30, -6)
+	cb.Text:SetJustifyH("LEFT")
+	cb.Text:SetWordWrap(true)
 	cb.Text:SetText(label)
 	cb.tooltipText = tip
 	cb:SetScript("OnClick", function(self)
@@ -35,7 +43,14 @@ local function Check(parent, key, label, tip, onChange)
 		Changed()
 	end)
 	cb.Update = function(self) self:SetChecked(NS.db.settings[key] and true or false) end
-	return cb
+	holder.Layout = function(self, availableWidth)
+		cb.Text:SetWidth(math.max(1, availableWidth - 30))
+		local height = math.max(26, cb.Text:GetStringHeight() + 8)
+		cb:SetHitRectInsets(0, -math.max(0, availableWidth - 26), 0, -(height - 26))
+		return height
+	end
+	holder.checkbox, holder.label = cb, cb.Text
+	return holder
 end
 
 -- A horizontal radio group on one row: label on the left, one radio per value.
@@ -57,6 +72,7 @@ local function RadioRow(parent, key, label, values, names, tip, opts)
 	end
 	text:SetJustifyH("LEFT")
 	text:SetText(label)
+	text:SetWordWrap(true)
 	holder.radios = {}
 	local anchor
 	for i, value in ipairs(values) do
@@ -70,6 +86,7 @@ local function RadioRow(parent, key, label, values, names, tip, opts)
 		r.text = r:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 		r.text:SetPoint("LEFT", r, "RIGHT", 3, 0)
 		r.text:SetText(names[value] or tostring(value))
+		r.text:SetWordWrap(true)
 		r.value = value
 		r:SetScript("OnClick", function()
 			NS.db.settings[key] = value
@@ -86,6 +103,39 @@ local function RadioRow(parent, key, label, values, names, tip, opts)
 	holder.Update = function(self)
 		for _, o in ipairs(self.radios) do o:SetChecked(NS.db.settings[key] == o.value) end
 	end
+	holder.label = text
+	holder.Layout = function(self, availableWidth)
+		local optionWidths, totalWidth = {}, 0
+		for i, radio in ipairs(self.radios) do
+			radio.text:SetWidth(0)
+			optionWidths[i] = 19 + math.ceil(radio.text:GetStringWidth())
+			totalWidth = totalWidth + optionWidths[i] + (i > 1 and 14 or 0)
+		end
+		text:ClearAllPoints()
+		text:SetPoint("TOPLEFT", self, "TOPLEFT", 4, -2)
+		text:SetWidth(math.max(1, math.min(labelWidth, availableWidth - 8)))
+		local stacked = wrap or totalWidth > availableWidth - labelWidth - 12 or text:GetStringHeight() > 20
+		local optionsX, optionsY = labelWidth + 12, 2
+		if stacked then
+			text:SetWidth(math.max(1, availableWidth - 8))
+			optionsX, optionsY = 24, 2 + text:GetStringHeight() + 8
+		end
+		local plan = Layout.Flow(math.max(1, availableWidth - optionsX - 4), optionWidths, function(i, cellWidth)
+			local label = self.radios[i].text
+			label:SetWidth(math.max(1, cellWidth - 19))
+			return label:GetStringHeight() + 2
+		end)
+		for i, cell in ipairs(plan.cells) do
+			local radio = self.radios[i]
+			radio:ClearAllPoints()
+			radio:SetPoint("TOPLEFT", self, "TOPLEFT", optionsX + cell.x, -(optionsY + cell.y))
+			radio.text:ClearAllPoints()
+			radio.text:SetPoint("TOPLEFT", radio, "TOPRIGHT", 3, -1)
+			radio:SetHitRectInsets(0, -(cell.width - 16), 0, -(cell.height - 16))
+		end
+		self.optionLayout, self.optionsX, self.optionsY = plan, optionsX, optionsY
+		return math.max(20, optionsY + plan.height + 4)
+	end
 	return holder
 end
 
@@ -95,9 +145,9 @@ local function Slider(parent, name, key, minV, maxV, labelFn)
 	holder:SetSize(BOX_W - 2 * PAD, 44)
 	local label = holder:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
 	label:SetPoint("TOPLEFT", 4, 0)
+	label:SetJustifyH("LEFT")
+	label:SetWordWrap(true)
 	local s = CreateFrame("Slider", name, holder, "OptionsSliderTemplate")
-	s:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 2, -6)
-	s:SetWidth(220)
 	s:SetMinMaxValues(minV, maxV)
 	s:SetValueStep(1)
 	s:SetObeyStepOnDrag(true)
@@ -105,18 +155,29 @@ local function Slider(parent, name, key, minV, maxV, labelFn)
 	_G[name .. "High"]:SetText(tostring(maxV))
 	_G[name .. "Text"]:SetText("")
 	s:SetScript("OnValueChanged", function(self, v)
+		if self.updatingValue then return end
 		v = math.floor(v + 0.5)
 		if NS.db.settings[key] ~= v then
 			NS.db.settings[key] = v
-			NS.OnSettingsChanged()
+			Changed()
 		end
 		label:SetText(labelFn(v))
 	end)
 	holder.Update = function()
 		local v = tonumber(NS.db.settings[key]) or minV
+		s.updatingValue = true
 		s:SetValue(v)
+		s.updatingValue = false
 		label:SetText(labelFn(v))
 	end
+	holder.Layout = function(self, availableWidth)
+		label:SetWidth(math.max(1, availableWidth - 8))
+		s:ClearAllPoints()
+		s:SetPoint("TOPLEFT", self, "TOPLEFT", 6, -(label:GetStringHeight() + 10))
+		s:SetWidth(math.max(1, math.min(220, availableWidth - 12)))
+		return label:GetStringHeight() + 10 + 20 + 18
+	end
+	holder.label, holder.slider = label, s
 	return holder
 end
 
@@ -125,10 +186,15 @@ local function Note(parent, width)
 	local fs = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 	fs:SetWidth(width or (BOX_W - 2 * PAD - 8))
 	fs:SetJustifyH("LEFT")
+	fs:SetWordWrap(true)
 	local holder = CreateFrame("Frame", nil, parent)
 	holder:SetSize(BOX_W - 2 * PAD, 14)
 	fs:SetPoint("TOPLEFT", holder, "TOPLEFT", 4, 0)
 	holder.text = fs
+	holder.Layout = function(self, availableWidth)
+		fs:SetWidth(math.max(1, math.min(width or availableWidth, availableWidth - 8)))
+		return fs:GetStringHeight() + 2
+	end
 	return holder
 end
 
@@ -143,9 +209,8 @@ local function Build()
 	scroll:SetPoint("TOPLEFT", 0, -4)
 	scroll:SetPoint("BOTTOMRIGHT", -28, 4)
 	local content = CreateFrame("Frame", nil, scroll)
-	content:SetSize(620, 1400)
+	content:SetSize(620, 1)
 	scroll:SetScrollChild(content)
-	scroll:SetScript("OnSizeChanged", function(self, w) content:SetWidth(math.max(620, w)) end)
 	scroll:EnableMouseWheel(true)
 	scroll:SetScript("OnMouseWheel", function(self, delta)
 		local max = self:GetVerticalScrollRange()
@@ -159,10 +224,12 @@ local function Build()
 	sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
 	sub:SetWidth(560)
 	sub:SetJustifyH("LEFT")
-	sub:SetText(L["Uses original quest automation. Valid pre-picks override automatic reward recommendations. Controls marked Not implemented remain saved-only placeholders."])
+	sub:SetText(L["Automatically accepts and turns in quests. Pre-pick rewards or use automatic selection. Settings marked Not implemented do not affect automation."])
 
-	local last, lastDy = sub, -14
-	local function Place(w, dy) w:SetPoint("TOPLEFT", last, "BOTTOMLEFT", 0, dy or lastDy); last = w; lastDy = -6 end
+	local pageRows = {}
+	local function Place(w, dy)
+		pageRows[#pageRows + 1] = {widget = w, gap = -(dy or -6), indent = 0}
+	end
 
 	local function Section(header)
 		local box = CreateFrame("Frame", nil, content, BackdropTemplateMixin and "BackdropTemplate" or nil)
@@ -175,21 +242,33 @@ local function Build()
 		local h = box:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 		h:SetPoint("TOPLEFT", PAD, -PAD)
 		h:SetText(header)
-		box.inner_last, box.inner_h = h, PAD + 14
+		h:SetJustifyH("LEFT")
+		h:SetWordWrap(true)
+		box.rows, box.indent = {}, 0
 		function box:Add(w, height, dy, dx)
-			dy = dy or -6
-			w:SetPoint("TOPLEFT", self.inner_last, "BOTTOMLEFT", dx or 0, dy)
-			self.inner_last, self.inner_h = w, self.inner_h - dy + height
+			self.indent = self.indent + (dx or 0)
+			self.rows[#self.rows + 1] = {widget = w, minHeight = height, gap = -(dy or -6), indent = self.indent}
 			return w
 		end
-		function box:Finish() self:SetHeight(self.inner_h + PAD) end
+		function box:Layout(width)
+			self:SetWidth(width)
+			h:SetWidth(math.max(1, width - 2 * PAD))
+			local bottom = Layout.Stack(self.rows, math.max(1, width - 2 * PAD), PAD + h:GetStringHeight())
+			for _, entry in ipairs(self.rows) do
+				entry.widget:ClearAllPoints()
+				entry.widget:SetPoint("TOPLEFT", self, "TOPLEFT", PAD + entry.x, -entry.y)
+			end
+			self:SetHeight(bottom + PAD)
+			return self:GetHeight()
+		end
+		function box:Finish() self:Layout(BOX_W) end
 		Place(box, -14)
 		return box
 	end
 
 	-- Master switch directly under the intro.
 	Place(Check(content, "enabled", L["Enable the automation"], L["Master switch. Holding the pause key while talking to an NPC pauses everything for that conversation."]), -14)
-	Place(Check(content, "minimap", L["Minimap button"], L["Show the button on the minimap. Left-click switches the automation on or off, right-click opens the menu, drag moves it."],
+	Place(Check(content, "minimap", L["Minimap button"], L["Left-click: toggle the pick window. Right-click: settings. Drag to move."],
 		function(value) if NS.ShowMinimapButton then NS.ShowMinimapButton(value) end end), -2)
 
 	-- Section: Quest dialog automation
@@ -206,7 +285,7 @@ local function Build()
 
 	-- Section: Reward tiers
 	-- Original reward settings are functional. Retained tier controls below are state only.
-	local r = Section(L["Original reward selection"])
+	local r = Section(L["Reward selection"])
 	r:Add(RadioRow(r, "rewardMode", L["Reward choice"], NS.REWARD_MODES,
 		{ fit = L["Best fit"], value = L["Vendor value"], manual = L["Manual"] },
 		L["Best fit compares the armour class you wear at your level and the stats your class wants. Most valuable takes the reward with the highest vendor price."], { labelWidth = 160 }), 20)
@@ -266,9 +345,25 @@ local function Build()
 	p:Add(Check(p, "xpBar", L["Completed quests on the experience bar"]), 26, -2)
 	p:Finish()
 
-	local function LayoutContentHeight()
-		local top, bottom = content:GetTop(), p:GetBottom()
-		if top and bottom then content:SetHeight(top - bottom + 24) end
+	local layingOut = false
+	local function LayoutPage()
+		if layingOut then return end
+		layingOut = true
+		local viewportWidth = scroll:GetWidth()
+		if not viewportWidth or viewportWidth <= 0 then viewportWidth = 620 end
+		content:SetWidth(viewportWidth)
+		local sectionWidth = math.min(BOX_W, math.max(1, viewportWidth - 32))
+		title:SetWidth(sectionWidth)
+		sub:SetWidth(sectionWidth)
+		local headerBottom = 16 + title:GetStringHeight() + 6 + sub:GetStringHeight()
+		local pageBottom = Layout.Stack(pageRows, sectionWidth, headerBottom)
+		for _, entry in ipairs(pageRows) do
+			entry.widget:ClearAllPoints()
+			entry.widget:SetPoint("TOPLEFT", content, "TOPLEFT", 16 + entry.x, -entry.y)
+		end
+		content:SetHeight(pageBottom + 24)
+		scroll:SetVerticalScroll(math.max(0, math.min(scroll:GetVerticalScroll(), scroll:GetVerticalScrollRange())))
+		layingOut = false
 	end
 	local function UpdateTree(frame)
 		for _, child in ipairs({ frame:GetChildren() }) do
@@ -276,11 +371,15 @@ local function Build()
 			UpdateTree(child)
 		end
 	end
+	optionsFrame.Layout = LayoutPage
 	optionsFrame.Update = function(self)
 		UpdateTree(content)
-		LayoutContentHeight()
+		LayoutPage()
 	end
 	optionsFrame:SetScript("OnShow", optionsFrame.Update)
+	scroll:SetScript("OnSizeChanged", LayoutPage)
+	optionsFrame.layoutRows, optionsFrame.content, optionsFrame.scroll = pageRows, content, scroll
+	optionsFrame:Update()
 
 	if Settings and Settings.RegisterCanvasLayoutCategory then
 		optionsCategory = Settings.RegisterCanvasLayoutCategory(optionsFrame, L["Quest Automator"])
