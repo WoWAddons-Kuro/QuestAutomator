@@ -94,6 +94,34 @@ function Forever.SelectedQuestLogQuestID()
 	return nil
 end
 
+-- Forever's quest-log reward globals take questID (GetNumQuestLogChoices(questID),
+-- GetQuestLogChoiceInfo(i, questID) -> name, texture, count, quality, isUsable, itemID).
+function Forever.QuestLogChoiceSource(questID)
+	local choices = {}
+	local count = NS.SafeNumber(NS.Call("GetNumQuestLogChoices", questID)) or 0
+	for i = 1, count do
+		local name, texture, num, quality, isUsable, itemID = NS.Call("GetQuestLogChoiceInfo", i, questID)
+		itemID = NS.SafeNumber(itemID)
+		local link = NS.SafeString(NS.Call("GetQuestLogItemLink", "choice", i))
+		if itemID and not link then
+			local _, itemLink = NS.Call("C_Item.GetItemInfo", itemID)
+			link = NS.SafeString(itemLink) or ("item:" .. itemID)
+		end
+		choices[i] = { info = { name, texture, num, quality, isUsable, itemID }, link = link, itemID = itemID }
+	end
+	return {
+		name = "log", questID = questID,
+		Count = function() return #choices end,
+		Info = function(i) return unpack(choices[i].info, 1, 6) end,
+		Link = function(i) return choices[i].link end,
+		Tooltip = function(i) return NS.Call("C_TooltipInfo.GetQuestLogItem", "choice", i, questID) end,
+	}
+end
+
+function Forever.QuestLogRewardXP(questID)
+	return NS.SafeNumber(NS.Call("GetQuestLogRewardXP", questID)) or 0
+end
+
 function Forever.DebugReport()
 	local E = Enum and Enum.QuestFrequency or {}
 	NS.Print("Client: Forever; Enum.QuestFrequency Default=%s Daily=%s Weekly=%s ResetByScheduler=%s",

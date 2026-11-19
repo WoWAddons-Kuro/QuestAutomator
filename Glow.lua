@@ -117,8 +117,8 @@ local function Context()
 	if type(rewardsFrame) ~= "table" or type(rewardsFrame.RewardButtons) ~= "table" then return nil end
 	local questID, source
 	if info.questLog then
-		questID = NS.SafeNumber(NS.Call("C_QuestLog.GetSelectedQuest"))
-		if not questID or questID == 0 then return nil end
+		questID = NS.Client.SelectedQuestLogQuestID()
+		if not questID then return nil end
 		source = Rewards.LogSource(questID)
 	else
 		questID = NS.SafeNumber(NS.Call("GetQuestID"))

@@ -151,6 +151,51 @@ function Era.SelectedQuestLogQuestID()
 	return nil
 end
 
+-- Era's quest-log reward globals (GetNumQuestLogChoices, GetQuestLogChoiceInfo,
+-- GetQuestLogItemLink, GetQuestLogRewardXP, C_TooltipInfo.GetQuestLogItem) take
+-- NO questID: they read the SELECTED log entry. Select the quest, call fn,
+-- restore the previous selection (including 0 = nothing selected).
+local function WithLogSelection(questID, fn)
+	local index = NS.SafeNumber(NS.Call("GetQuestLogIndexByID", questID))
+	if not index or index <= 0 then return nil end
+	local previous = NS.SafeNumber(NS.Call("GetQuestLogSelection"))
+	if previous ~= index then NS.Call("SelectQuestLogEntry", index) end
+	local ok, result = pcall(fn)
+	if previous ~= nil and previous ~= index then NS.Call("SelectQuestLogEntry", previous) end
+	if not ok then error(result) end
+	return result
+end
+
+-- GetQuestLogChoiceInfo(i) on Era -> name, texture, count, quality, isUsable, itemID (6 returns)
+function Era.QuestLogChoiceSource(questID)
+	local choices = WithLogSelection(questID, function()
+		local list = {}
+		local count = NS.SafeNumber(NS.Call("GetNumQuestLogChoices")) or 0
+		for i = 1, count do
+			local name, texture, num, quality, isUsable, itemID = NS.Call("GetQuestLogChoiceInfo", i)
+			local link = NS.SafeString(NS.Call("GetQuestLogItemLink", "choice", i))
+			itemID = NS.SafeNumber(itemID) or (link and tonumber(link:match("item:(%d+)")))
+			if itemID and not link then
+				local _, itemLink = NS.Call("C_Item.GetItemInfo", itemID)
+				link = NS.SafeString(itemLink) or ("item:" .. itemID)
+			end
+			list[i] = { info = { name, texture, num, quality, isUsable, itemID }, link = link, itemID = itemID }
+		end
+		return list
+	end) or {}
+	return {
+		name = "log", questID = questID,
+		Count = function() return #choices end,
+		Info = function(i) return unpack(choices[i].info, 1, 6) end,
+		Link = function(i) return choices[i].link end,
+		Tooltip = function(i) local link = choices[i].link; if link then return NS.Call("C_TooltipInfo.GetHyperlink", link) end end,
+	}
+end
+
+function Era.QuestLogRewardXP(questID)
+	return NS.SafeNumber(WithLogSelection(questID, function() return NS.Call("GetQuestLogRewardXP") end)) or 0
+end
+
 function Era.DebugReport()
 	local E = Enum and Enum.QuestFrequency or {}
 	NS.Print("Client: Classic Era; Enum.QuestFrequency Default=%s Daily=%s Weekly=%s | LE_QUEST_FREQUENCY DEFAULT=%s DAILY=%s WEEKLY=%s",

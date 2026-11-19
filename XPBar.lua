@@ -92,29 +92,18 @@ end
 -- listed when it is not a task and not hidden (:1663), and it reads as complete when
 -- C_QuestLog.IsComplete is true (:1888). ReadyForTurnIn is not what the log shows, and
 -- the hidden entries (tracking quests) never appear in it, so neither is counted.
-local function ListedInLog(info)
-	return not NS.SafeBool(info.isHeader) and not NS.SafeBool(info.isHidden) and not NS.SafeBool(info.isTask)
-end
-
-local function QuestComplete(questID)
-	if NS.SafeBool(NS.Call("C_QuestLog.IsFailed", questID)) then return false end
-	return NS.SafeBool(NS.Call("C_QuestLog.IsComplete", questID))
-end
-
 -- Completed quests in the log and the experience they give: total, list of { questID, title, xp }.
+-- Which rows count (no headers / hidden / task) and "complete" (complete, not failed)
+-- are decided per client in Client.QuestLogQuests; the XP read (questID on Forever,
+-- selected log entry on Era) in Client.QuestLogRewardXP.
 function XPBar.CompletedQuests()
 	local total, list = 0, {}
-	local entries = NS.SafeNumber(NS.Call("C_QuestLog.GetNumQuestLogEntries")) or 0
-	for index = 1, entries do
-		local info = NS.Call("C_QuestLog.GetInfo", index)
-		if type(info) == "table" and ListedInLog(info) then
-			local questID = NS.SafeNumber(info.questID)
-			if questID and questID > 0 and QuestComplete(questID) then
-				local xp = NS.SafeNumber(NS.Call("GetQuestLogRewardXP", questID)) or 0
-				if xp > 0 then
-					total = total + xp
-					list[#list + 1] = { questID = questID, title = NS.SafeString(info.title), xp = xp }
-				end
+	for _, quest in ipairs(NS.Client.QuestLogQuests()) do
+		if quest.isComplete then
+			local xp = NS.Client.QuestLogRewardXP(quest.questID)
+			if xp > 0 then
+				total = total + xp
+				list[#list + 1] = { questID = quest.questID, title = quest.title, xp = xp }
 			end
 		end
 	end

@@ -32,16 +32,12 @@ Rewards.OFFER = {
 -- The quest log counts item choices only (GetNumQuestLogChoices(questID), the
 -- QuestUtils_GetBestQualityItemRewardIndex convention) and indexes them the way
 -- QuestInfo.lua numbers its buttons in questLog mode (choiceItemIndex).
+-- Reading them differs per client (Forever takes questID, Era reads the selected
+-- log entry): Client.QuestLogChoiceSource hides that.
 function Rewards.LogSource(questID)
-	return {
-		name = "log",
-		questID = questID,
-		Count = function() return NS.Call("GetNumQuestLogChoices", questID) end,
-		LootType = function() return Rewards.LOOT_ITEM end,
-		Info = function(i) return NS.Call("GetQuestLogChoiceInfo", i, questID) end,
-		Link = function(i) return NS.Call("GetQuestLogItemLink", "choice", i) end,
-		Tooltip = function(i) return NS.Call("C_TooltipInfo.GetQuestLogItem", "choice", i, questID) end,
-	}
+	local source = NS.Client.QuestLogChoiceSource(questID)
+	source.LootType = function() return Rewards.LOOT_ITEM end
+	return source
 end
 
 -- This build's format strings (GlobalStrings on wago.tools, build 1.60.1.69893,

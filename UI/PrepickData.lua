@@ -6,26 +6,13 @@ local Rewards, Rules, L = NS.Rewards, NS.Rules, NS.L
 local Data = {}
 NS.PrePickData = Data
 
-local function Pack(...) return { n = select("#", ...), ... } end
 
+-- Every real quest in the log as { questID, title }. Enumeration is per-client
+-- (Forever: C_QuestLog.GetInfo; Era: legacy GetQuestLogTitle tuple) in Client/.
 function Data.ListQuests()
 	local quests = {}
-	if C_QuestLog and C_QuestLog.GetInfo then
-		local count = NS.SafeNumber(NS.Call("C_QuestLog.GetNumQuestLogEntries")) or 0
-		for questLogIndex = 1, count do
-			local row = NS.Call("C_QuestLog.GetInfo", questLogIndex)
-			if row and not row.isHeader and not row.isHidden and not row.isTask and row.questID and row.questID > 0 then
-				quests[#quests + 1] = { questID = row.questID, title = row.title }
-			end
-		end
-	else
-		local count = NS.SafeNumber(NS.Call("GetNumQuestLogEntries")) or 0
-		for questLogIndex = 1, count do
-			local title, _, _, isHeader, _, _, _, questID = NS.Call("GetQuestLogTitle", questLogIndex)
-			if not isHeader and type(questID) == "number" and questID > 0 then
-				quests[#quests + 1] = { questID = questID, title = title }
-			end
-		end
+	for _, quest in ipairs(NS.Client.QuestLogQuests()) do
+		quests[#quests + 1] = { questID = quest.questID, title = quest.title }
 	end
 	return quests
 end
@@ -37,56 +24,20 @@ function Data.QuestTitle(questID)
 end
 
 function Data.SelectedQuestID()
-	if C_QuestLog and C_QuestLog.GetSelectedQuest then
-		return NS.SafeNumber(NS.Call("C_QuestLog.GetSelectedQuest"))
-	end
-	return NS.SafeNumber(NS.Call("GetQuestLogSelectedID"))
+	return NS.Client.SelectedQuestLogQuestID()
 end
 
--- Snapshot legacy log choices while the requested quest is selected, then
--- immediately restore the old selection (including 0). The resulting source
--- never reads the changing global selection again. Modern APIs take questID.
+-- The quest's log reward choices, snapshotted by the client adapter (Era selects
+-- the log entry and restores the previous selection; Forever takes questID).
 function Data.LogSource(questID)
-	local choices = {}
-	local function ReadChoices(legacy)
-		local apiQuestID
-		if not legacy then apiQuestID = questID end
-		local count = NS.SafeNumber(NS.Call("GetNumQuestLogChoices", apiQuestID)) or 0
-		for rewardChoiceIndex = 1, count do
-			local info = Pack(NS.Call("GetQuestLogChoiceInfo", rewardChoiceIndex, apiQuestID))
-			local link
-			if legacy then link = NS.SafeString(NS.Call("GetQuestLogItemLink", "choice", rewardChoiceIndex)) end
-			local itemID = NS.SafeNumber(info[6]) or (link and tonumber(link:match("item:(%d+)")))
-			if itemID and not link then
-				local _, itemLink = NS.Call("C_Item.GetItemInfo", itemID)
-				link = NS.SafeString(itemLink) or ("item:" .. itemID)
-			end
-			info[6], info.n = itemID, 6
-			choices[rewardChoiceIndex] = { info = info, link = link, itemID = itemID }
-		end
-	end
-	if C_QuestLog and C_QuestLog.GetSelectedQuest then
-		ReadChoices(false)
-	else
-		local questLogIndex = NS.SafeNumber(NS.Call("GetQuestLogIndexByID", questID))
-		local previousIndex = NS.SafeNumber(NS.Call("GetQuestLogSelection"))
-		if questLogIndex and questLogIndex > 0 and previousIndex ~= nil then
-			if previousIndex ~= questLogIndex then NS.Call("SelectQuestLogEntry", questLogIndex) end
-			local ok, err = pcall(ReadChoices, true)
-			if previousIndex ~= questLogIndex then NS.Call("SelectQuestLogEntry", previousIndex) end
-			if not ok then error(err) end
-		end
-	end
+	local source = NS.Client.QuestLogChoiceSource(questID)
 	return {
 		name = "ui-log", questID = questID,
-		Count = function() return #choices end,
+		Count = source.Count,
 		LootType = function() return Rewards.LOOT_ITEM end,
-		Info = function(rewardChoiceIndex) local info = choices[rewardChoiceIndex].info; return unpack(info, 1, info.n) end,
-		Link = function(rewardChoiceIndex) return choices[rewardChoiceIndex].link end,
-		Tooltip = function(rewardChoiceIndex)
-			local choice = choices[rewardChoiceIndex]
-			if choice.link then return NS.Call("C_TooltipInfo.GetHyperlink", choice.link) end
-		end,
+		Info = source.Info,
+		Link = source.Link,
+		Tooltip = source.Tooltip,
 	}
 end
 

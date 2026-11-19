@@ -79,6 +79,16 @@ Client.INTERFACE = {
 	-- SelectedQuestLogQuestID() -> the questID selected in the quest log, or nil
 	"SelectedQuestLogQuestID",
 
+	-- QuestLogChoiceSource(questID)  the reward CHOICES of a quest in the log, read
+	-- once and snapshotted (Era must select the log entry to read them; the previous
+	-- selection is restored). Same shape Rewards.Gather consumes:
+	--   { name, questID, Count(), Info(i) -> name, texture, count, quality, isUsable, itemID,
+	--     Link(i) -> item link, Tooltip(i) -> C_TooltipInfo data or nil }
+	"QuestLogChoiceSource",
+
+	-- QuestLogRewardXP(questID) -> experience a completed log quest gives on hand-in; 0 if unknown
+	"QuestLogRewardXP",
+
 	-- DebugReport()  one /qam debug line describing the flavour and its constants
 	"DebugReport",
 }
