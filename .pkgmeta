@@ -1,0 +1,14 @@
+# CurseForge packager config. package-as is REQUIRED once the addon ships flavour TOCs
+# (QuestAutomator_Vanilla.toc / _Camelot.toc): "Aborting: Multiple TOC files found and package-as
+# not specified." Only CurseForge-documented keys are allowed here (see release.cs).
+package-as: QuestAutomator
+
+manual-changelog: CHANGELOG.md
+
+ignore:
+  - README.md
+  - SPECS
+  - tests
+  - .github
+  - .gitignore
+  - .pkgmeta
