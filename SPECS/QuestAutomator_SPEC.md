@@ -1,6 +1,10 @@
 # QuestAutomator — fork of SmartQuestAutomation with Classic Era support
 
-Status: **spec approved pending review** · Owner: Kuro · Assistant drafts, owner publishes/releases.
+Status: **Historical design, superseded by the restored-runtime baseline.** Owner: Kuro.
+
+The owner directed removal of Client.lua and Engine.lua and restoration of the ZIP's original
+runtime without refactoring. Retained UI options absent from the original are saved-only placeholders.
+See [Restored runtime / UI baseline](RESTORED_UI_BASELINE.md) for current behaviour and testing.
 
 ## 1. Goal
 

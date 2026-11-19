@@ -1,30 +1,31 @@
 ## Interface: 16001, 11509
 ## Title: Quest Automator
 ## Title-zhCN: 智能任务 Quest Automator
-## Notes: Accepts and turns in quests for you and picks the reward that fits your class and level, or the most valuable one. Hold Shift while talking to an NPC to do it by hand.|nFork of Smart Quest Automation (qqytqqyt): /qam, WoW Forever and Classic Era.
+## Notes: Accepts and turns in quests for you and picks the reward that fits your class and level, or the most valuable one. Hold Shift while talking to an NPC to do it by hand.
 ## Notes-zhCN: 自动接受并交付任务，并按职业与等级选择最合适（或最值钱）的任务奖励。与 NPC 对话时按住 Shift 即可临时改为手动。
-## Author: qqytqqyt (fork maintained by Kuro)
-## Version: v2026.11.18.1501
+## Author: qqytqqyt
+## Version: v2026.11.18.1709
 ## IconTexture: Interface\Icons\Achievement_Quests_Completed_08
 ## AddonCompartmentFunc: QuestAutomator_OnAddonCompartmentClick
 ## AddonCompartmentFuncOnEnter: QuestAutomator_OnAddonCompartmentEnter
 ## AddonCompartmentFuncOnLeave: QuestAutomator_OnAddonCompartmentLeave
 ## SavedVariables: QuestAutomatorDB
 ## SavedVariablesPerCharacter: QuestAutomatorCharDB
-## X-Website: https://github.com/WoWAddons-Kuro/QuestAutomator
-## X-Upstream: https://github.com/qqytqqyt/SmartQuestAutomation (Smart Quest Automation 0.3.0; repo unreachable 2026-11-17)
+## X-Website: https://github.com/qqytqqyt/SmartQuestAutomation
 ## X-Category: Quests & Leveling
 
 Locales\enUS.lua
 Locales\zhCN.lua
 Core.lua
-Client.lua
 Rules.lua
 Rewards.lua
-Engine.lua
+Models\PrePickModel.lua
+TurnInResolver.lua
 Automation.lua
 Glow.lua
-PrePick.lua
 XPBar.lua
+UI\State.lua
+UI\PrepickData.lua
+UI\Prepick.lua
 Settings.lua
 Minimap.lua

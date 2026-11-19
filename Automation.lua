@@ -1,4 +1,4 @@
--- QuestAutomator: the event flow. Gossip and greeting lists are walked
+-- Quest Automator: the event flow. Gossip and greeting lists are walked
 -- for quests to hand in (first) and quests to take (second); QUEST_DETAIL is
 -- accepted, QUEST_PROGRESS completed, QUEST_COMPLETE handed in with the reward
 -- picked by Rewards.lua. Holding the pause key (Shift by default) while
@@ -158,11 +158,7 @@ local function Defer(stage, fn)
 	state.token = state.token + 1
 	local token = state.token
 	NS.After(0, function()
-		if token ~= state.token or state.stage ~= stage then
-			NS.Log("skip", "%s: deferred action dropped (token %s/%s, stage now %s)", stage,
-				tostring(token), tostring(state.token), tostring(state.stage))
-			return
-		end
+		if token ~= state.token or state.stage ~= stage then return end
 		fn()
 	end)
 end
@@ -240,7 +236,7 @@ end
 local function QuestTitle(questID, fallback)
 	local offered = questID and state.offered[questID]
 	if offered and offered.title then return offered.title end
-	local title = questID and NS.Client.QuestTitle(questID)
+	local title = questID and NS.SafeString(NS.Call("C_QuestLog.GetTitleForQuestID", questID))
 	if title and title ~= "" then return title end
 	title = NS.SafeString(NS.Call("GetTitleText"))
 	if title and title ~= "" then return title end
@@ -270,54 +266,35 @@ function Auto.ActGossip()
 		return
 	end
 	local s = NS.db.settings
-	local active = NS.Call("C_GossipInfo.GetActiveQuests")
-	local available = NS.Call("C_GossipInfo.GetAvailableQuests")
-	active = type(active) == "table" and active or {}
-	available = type(available) == "table" and available or {}
-	NS.Log("info", "gossip: %d active, %d available (turnIn %s, accept %s)", #active, #available, tostring(s.turnIn), tostring(s.accept))
 	if s.turnIn then
-		for _, info in ipairs(active) do
+		local active = NS.Call("C_GossipInfo.GetActiveQuests")
+		for _, info in ipairs(type(active) == "table" and active or {}) do
 			local questID = NS.SafeNumber(info.questID)
 			local repeatable = IsRepeatable(info.repeatable, info.frequency)
-			local title = NS.SafeString(info.title)
-			-- Completion: the gossip entry's flag, or the quest log when the entry
-			-- does not say (Era's C_GossipInfo entries leave isComplete unset).
-			local complete = NS.SafeBool(info.isComplete)
-			if not complete and questID then complete = NS.Client.IsQuestComplete(questID) == true end
-			local ok, reason = true, nil
-			if not questID then ok, reason = false, "no questID"
-			elseif not complete then ok, reason = false, "not complete"
-			else ok, reason = Auto.MayTurnIn(questID, repeatable) end
-			if ok and not TryOnce("turnin", questID) then ok, reason = false, "already tried" end
-			if ok then
+			if questID and (NS.SafeBool(info.isComplete) or NS.SafeBool(NS.Call("IsQuestComplete", questID))) and Auto.MayTurnIn(questID, repeatable) and TryOnce("turnin", questID) then
+				local title = NS.SafeString(info.title)
 				state.offered[questID] = { title = title, repeatable = repeatable, trivial = NS.SafeBool(info.isTrivial), turnIn = true }
 				NS.Log("act", "gossip: hand in %s (%d)", tostring(title), questID)
 				AwaitAnswer(questID, title)
 				NS.Call("C_GossipInfo.SelectActiveQuest", questID)
 				return
 			end
-			NS.Log("skip", "gossip: active %s (%s): %s", tostring(title), tostring(info.questID), tostring(reason))
 		end
 	end
 	if s.accept then
-		for _, info in ipairs(available) do
+		local available = NS.Call("C_GossipInfo.GetAvailableQuests")
+		for _, info in ipairs(type(available) == "table" and available or {}) do
 			local questID = NS.SafeNumber(info.questID)
 			local repeatable = IsRepeatable(info.repeatable, info.frequency)
 			local trivial = NS.SafeBool(info.isTrivial)
-			local title = NS.SafeString(info.title)
-			local ok, reason = true, nil
-			if not questID then ok, reason = false, "no questID"
-			elseif OnQuest(questID) then ok, reason = false, "already on quest"
-			else ok, reason = Auto.MayAccept(questID, trivial, repeatable) end
-			if ok and not TryOnce("accept", questID) then ok, reason = false, "already tried" end
-			if ok then
+			if questID and not OnQuest(questID) and Auto.MayAccept(questID, trivial, repeatable) and TryOnce("accept", questID) then
+				local title = NS.SafeString(info.title)
 				state.offered[questID] = { title = title, repeatable = repeatable, trivial = trivial }
 				NS.Log("act", "gossip: take %s (%d)", tostring(title), questID)
 				AwaitAnswer(questID, title)
 				NS.Call("C_GossipInfo.SelectAvailableQuest", questID)
 				return
 			end
-			NS.Log("skip", "gossip: available %s (%s): %s", tostring(title), tostring(info.questID), tostring(reason))
 		end
 	end
 end
@@ -347,8 +324,8 @@ function Auto.ActGreeting()
 		local numActive = NS.SafeNumber(NS.Call("GetNumActiveQuests")) or 0
 		for i = 1, numActive do
 			local title, isComplete = NS.Call("GetActiveTitle", i)
-			local questID = NS.Client.ActiveQuestID(i)
-			local repeatable = questID and NS.Client.IsQuestRepeatable(questID) or false
+			local questID = NS.SafeNumber(NS.Call("GetActiveQuestID", i))
+			local repeatable = questID and NS.SafeBool(NS.Call("C_QuestLog.IsRepeatableQuest", questID)) or false
 			title = NS.SafeString(title)
 			if NS.SafeBool(isComplete) and Auto.MayTurnIn(questID, repeatable) and TryOnce("turnin", questID or title or i) then
 				if questID then
@@ -364,10 +341,10 @@ function Auto.ActGreeting()
 	if s.accept then
 		local numAvailable = NS.SafeNumber(NS.Call("GetNumAvailableQuests")) or 0
 		for i = 1, numAvailable do
-			local row = NS.Client.AvailableQuestInfo(i)
-			local questID = row.questID
-			local trivial = row.isTrivial
-			local repeatable = IsRepeatable(row.isRepeatable, row.frequency)
+			local isTrivial, frequency, isRepeatable, _, questID = NS.Call("GetAvailableQuestInfo", i)
+			questID = NS.SafeNumber(questID)
+			local trivial = NS.SafeBool(isTrivial)
+			local repeatable = IsRepeatable(isRepeatable, frequency)
 			local title = NS.SafeString(NS.Call("GetAvailableTitle", i))
 			if not OnQuest(questID) and Auto.MayAccept(questID, trivial, repeatable) and TryOnce("accept", questID or title or i) then
 				if questID then
@@ -406,9 +383,8 @@ function Auto.ActDetail(questStartItemID)
 	local offered = questID and state.offered[questID]
 	if not offered then
 		-- The player (or the server) opened this quest; apply the same rules as far as the client answers.
-		-- (nil from the adapter = the client cannot tell; treated as "not".)
-		local trivial = questID and NS.Client.IsQuestTrivial(questID) or false
-		local repeatable = questID and NS.Client.IsQuestRepeatable(questID) or false
+		local trivial = questID and NS.SafeBool(NS.Call("C_QuestLog.IsQuestTrivial", questID)) or false
+		local repeatable = questID and NS.SafeBool(NS.Call("C_QuestLog.IsRepeatableQuest", questID)) or false
 		local ok, reason = Auto.MayAccept(questID, trivial, repeatable)
 		if not ok then
 			NS.Log("skip", "detail: %s (%s)", reason, tostring(questID))
@@ -449,7 +425,7 @@ local function TurnInAllowed(stage)
 	if offered then
 		repeatable = offered.repeatable
 	else
-		repeatable = questID and NS.Client.IsQuestRepeatable(questID) or false
+		repeatable = questID and NS.SafeBool(NS.Call("C_QuestLog.IsRepeatableQuest", questID)) or false
 	end
 	local ok, reason = Auto.MayTurnIn(questID, repeatable)
 	if not ok then
@@ -505,57 +481,56 @@ function Auto.TakeReward(questID, index, decision)
 	state.pending = nil
 	if decision and decision.choice then
 		NS.chardb.counts.chosen = NS.chardb.counts.chosen + 1
-		NS.Announce(L["Reward: %s (%s: %s)"], Rewards.ChoiceLabel(decision.choice), NS.Engine.TierName(decision.tier), NS.Engine.Describe(decision))
+		NS.Announce(L["Reward: %s (%s)"], Rewards.ChoiceLabel(decision.choice), Rewards.Describe(decision))
 	end
 	NS.Log("act", "complete: reward %d for %s", index, tostring(questID))
 	NS.Call("GetQuestReward", index)
 end
 
--- The window stays open; the glow (Glow.lua) marks decision.index.
-function Auto.LeaveChoice(decision)
+function Auto.LeaveChoice(reason, decision)
 	state.pending = nil
 	NS.chardb.counts.left = NS.chardb.counts.left + 1
-	NS.Log("skip", "complete: left to the player (tier %s, %s)", tostring(decision and decision.tier), tostring(decision and decision.reason))
-	if decision and decision.choice then
-		NS.Announce(L["Choose the reward yourself: %s. Suggested: %s."], NS.Engine.LeaveReasonText(decision), Rewards.ChoiceLabel(decision.choice))
-	else
-		NS.Announce(L["Choose the reward yourself: %s."], NS.Engine.LeaveReasonText(decision))
-	end
-end
-
--- Settings view for one evaluation: the stored settings plus the pre-pick made at
--- accept time for this quest (Rewards/Engine read settings.prePickItemID).
-function Auto.SettingsFor(questID)
-	local s = NS.db.settings
-	local pre = questID and NS.chardb and NS.chardb.prePicks and NS.chardb.prePicks[questID] or nil
-	if not pre then return s end
-	return setmetatable({ prePickItemID = pre }, { __index = s })
+	NS.Log("skip", "complete: left to the player (%s)", reason)
+	NS.Announce(L["Choose the reward yourself: %s."], Rewards.ReasonText(reason, decision))
 end
 
 function Auto.Choose(questID, attempt)
-	local n = NS.SafeNumber(NS.Call("GetNumQuestChoices")) or 0
-	if n <= 1 then
-		Auto.TakeReward(questID, n == 1 and 1 or 0)
+	local rewardChoiceCount = NS.SafeNumber(NS.Call("GetNumQuestChoices")) or 0
+	local rewardChoices = rewardChoiceCount > 1 and Rewards.Gather(rewardChoiceCount) or {}
+	local turnInContext = {
+		questID = NS.SafeNumber(questID),
+		rewardChoiceCount = rewardChoiceCount,
+		rewardChoices = rewardChoices,
+		settings = NS.db.settings,
+		player = rewardChoiceCount > 1 and Rules.Player() or nil,
+	}
+	local ok, decision = pcall(function()
+		local resolver = NS.TurnInResolver
+		local result = resolver.Resolve(turnInContext)
+		if not resolver.IsDecisionValid(turnInContext, result) then error("invalid turn-in resolver result") end
+		return result
+	end)
+	if not ok then
+		NS.WarnOnce("turn-in-resolver", tostring(decision))
+		Auto.LeaveChoice(L["the reward resolver failed; choose manually"])
 		return
 	end
-	local choices = Rewards.Gather(n)
-	local decision = Rewards.Evaluate(choices, Auto.SettingsFor(questID), Rules.Player())
-	if decision.pending then
+	if decision.action == "wait" then
 		if attempt >= Auto.MAX_LOAD_TRIES then
-			Auto.LeaveChoice({ reason = "pending" })
+			Auto.LeaveChoice("pending")
 			return
 		end
-		for _, c in ipairs(choices) do
+		for _, c in ipairs(rewardChoices) do
 			if c.loaded == false and c.itemID then NS.Call("C_Item.RequestLoadItemDataByID", c.itemID) end
 		end
 		state.pending = { questID = questID, attempt = attempt }
 		NS.After(Auto.RETRY_DELAY, function() Auto.Retry(questID, attempt) end)
 		return
 	end
-	if decision.index and decision.action == "auto" then
-		Auto.TakeReward(questID, decision.index, decision)
+	if decision.action == "submit" then
+		Auto.TakeReward(questID, decision.rewardChoiceIndex, decision.rewardDecision)
 	else
-		Auto.LeaveChoice(decision)
+		Auto.LeaveChoice(decision.reason, decision.rewardDecision)
 	end
 end
 
@@ -590,10 +565,9 @@ end
 --------------------------------------------------------------------------------
 -- Results and party confirmations.
 --------------------------------------------------------------------------------
--- Forever passes (questID); Era passes (questIndex, questID) - QuestLogDocumentation.
-function Auto.OnQuestAccepted(a, b)
+function Auto.OnQuestAccepted(questID)
 	if not NS.loaded then return end
-	local questID = NS.SafeNumber(b) or NS.SafeNumber(a)
+	questID = NS.SafeNumber(questID)
 	local mine = state.byUs.accept
 	if mine == nil then return end
 	if mine ~= true and questID and mine ~= questID then return end

@@ -1,7 +1,5 @@
--- QuestAutomator: minimap button (shown by default, `/qam minimap` or the
--- settings page toggles it). Left-click opens the pick window (the icon greys out while
--- the automation is off or paused), right-click opens the settings page, drag moves it
--- around the minimap. No library. The only OnUpdate runs while it is being dragged.
+-- Quest Automator: minimap button. Left-click toggles the pre-picker, right-click
+-- opens settings; dragging changes its position. Automation is toggled in settings.
 --
 -- Placement: until the player drags the button, its angle is chosen automatically. The
 -- buttons already sitting on the minimap ring (other addons' buttons are children of
@@ -153,33 +151,23 @@ local function ShowTooltip(owner)
 	if not GameTooltip then return end
 	local s = Cfg()
 	GameTooltip:SetOwner(owner, "ANCHOR_LEFT")
-	GameTooltip:AddLine(L["QuestAutomator"])
+	GameTooltip:AddLine(L["Quest Automator"])
 	local paused = NS.Auto and NS.Auto.SessionPaused()
 	GameTooltip:AddLine(string.format(L["Automation: %s%s"], s.enabled and L["on"] or L["off"],
 		paused and (" (" .. L["paused for this session"] .. ")") or ""), 1, 1, 1)
-	GameTooltip:AddDoubleLine(L["Reward choice"], NS.TierSummaryShort(), 1, 1, 1, 1, 1, 1)
+	GameTooltip:AddDoubleLine(L["Reward choice"], NS.RewardModeName(s.rewardMode), 1, 1, 1, 1, 1, 1)
 	GameTooltip:AddDoubleLine(L["Pause key"], s.modifier == "NONE" and L["none"] or s.modifier, 1, 1, 1, 1, 1, 1)
-	-- Log quests with a reward to choose, and where each stands.
-	local pending = NS.PrePick and NS.PrePick.PendingQuests and NS.PrePick.PendingQuests() or {}
-	if #pending > 0 then
-		GameTooltip:AddLine(" ")
-		GameTooltip:AddLine(string.format(L["Rewards to choose: %d"], #pending), 1, 0.82, 0)
-		for _, q in ipairs(pending) do
-			local status, r, g, b
-			if q.picked then status, r, g, b = L["your pick"], 0.25, 1, 0.25
-			elseif q.action == "auto" then status, r, g, b = L["auto"], 0.6, 0.6, 0.6
-			else status, r, g, b = L["decide"], 1, 0.82, 0 end
-			GameTooltip:AddDoubleLine(q.title or ("#" .. q.questID), status, 1, 1, 1, r, g, b)
+	local quests = NS.PrePick and NS.PrePick.PendingQuests() or {}
+	if #quests > 0 then
+		GameTooltip:AddLine(string.format(L["Rewards to choose: %d"], #quests), 1, 0.82, 0)
+		for _, quest in ipairs(quests) do
+			local status = NS.PrePick.StatusText(quest)
+			GameTooltip:AddDoubleLine(quest.title or ("#" .. quest.questID), status, 1, 1, 1, 1, 0.82, 0)
 		end
 	end
-	GameTooltip:AddLine(L["Left-click: open the pick window. Right-click: settings. Drag to move."], 0.8, 0.8, 0.8)
+	GameTooltip:AddLine(L["Pre-picks override reward recommendations, not automation safeguards."], 1, 0.65, 0.2, true)
+	GameTooltip:AddLine(L["Left-click: toggle the pick window. Right-click: settings. Drag to move."], 0.8, 0.8, 0.8)
 	GameTooltip:Show()
-end
-
--- Left-click: the pick window (a chat line when no log quest has a reward to choose).
-local function OnLeftClick()
-	if NS.PrePick and NS.PrePick.OpenAny and NS.PrePick.OpenAny() then return end
-	NS.Print(L["No quest in your log has a reward to choose."])
 end
 
 --------------------------------------------------------------------------------
@@ -193,23 +181,22 @@ local function Flag(root, key, label)
 end
 
 local function Generator(owner, root)
-	root:CreateTitle(L["QuestAutomator"])
+	root:CreateTitle(L["Quest Automator"])
 	Flag(root, "enabled", L["Enable the automation"])
 	Flag(root, "accept", L["Accept quests"])
 	Flag(root, "turnIn", L["Hand in quests"])
 	root:CreateDivider()
-	-- One checkbox per reward tier: checked = pick automatically, unchecked = recommend only.
-	for _, n in ipairs({ "1", "2", "3", "4", "5" }) do
-		local key = NS.Engine.TIER_SETTING[n]
-		root:CreateCheckbox(L["Auto: %s"]:format(NS.Engine.TierName(n)),
-			function() return Cfg()[key] == "auto" end,
+	for _, mode in ipairs(NS.REWARD_MODES) do
+		root:CreateRadio(L["Reward: %s"]:format(NS.RewardModeName(mode)),
+			function() return Cfg().rewardMode == mode end,
 			function()
-				Cfg()[key] = Cfg()[key] == "auto" and "recommend" or "auto"
-				NS.Print("%s: %s", L["Tier %s (%s)"]:format(n, NS.Engine.TierName(n)), NS.TierActionNames()[Cfg()[key]])
+				Cfg().rewardMode = mode
+				NS.Print("%s: %s", L["Reward choice"], NS.RewardModeName(mode))
 				NS.OnSettingsChanged()
 			end)
 	end
-	Flag(root, "prePickUI", L["Ask me when I accept a quest"])
+	Flag(root, "weapons", L["Pick weapons too"])
+	Flag(root, "trinkets", L["Pick trinkets too"])
 	Flag(root, "announce", L["Announcements"])
 	Flag(root, "xpBar", L["Completed quests on the experience bar"])
 	root:CreateDivider()
@@ -265,7 +252,7 @@ local function CreateButton()
 		if mouseButton == "RightButton" then
 			NS.OpenSettings()
 		else
-			OnLeftClick()
+			if NS.PrePick then NS.PrePick.Toggle() end
 		end
 	end)
 	button:SetScript("OnDragStart", function(self) self:SetScript("OnUpdate", OnDragUpdate) end)

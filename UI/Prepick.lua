@@ -1,16 +1,11 @@
--- QuestAutomator: the pre-pick window (spec §6.4). When a quest is accepted whose
--- reward choice the engine would only recommend (a trinket, a rare, several
--- upgrades...), the choices are shown right away so the player can decide while
--- the quest text is fresh. The pick is remembered per character by quest ID and
--- *item ID* (never by index, so a reordered reward list cannot misfire) and turns
--- the hand-in into an automatic one. Cleared when the quest is handed in or dropped.
---
--- The window reads the quest log's reward list for the accepted quest through the
--- client adapter (Rewards.LogSource) a moment after QUEST_ACCEPTED, when the log
--- entry exists. Nothing is written into Blizzard's frames.
+-- QuestAutomator: pre-pick view and UI interactions. PrePickData reads display
+-- snapshots; PrePickModel owns selections; TurnInResolver owns consumption.
+-- No quest-dialog eligibility or hand-in function is changed by this module.
 local ADDON, NS = ...
 local L = NS.L
-local Rules, Rewards, Engine = NS.Rules, NS.Rewards, NS.Engine
+local Rules, Rewards = NS.Rules, NS.Rewards
+local Data = NS.PrePickData
+local Model = NS.PrePickModel
 local PrePick = {}
 NS.PrePick = PrePick
 
@@ -32,19 +27,15 @@ PrePick.state = state
 -- Storage: chardb.prePicks[questID] = itemID
 --------------------------------------------------------------------------------
 function PrePick.Get(questID)
-	local store = NS.chardb and NS.chardb.prePicks
-	return store and questID and store[questID] or nil
+	return Model.GetSelectedRewardItemID(questID)
 end
 
 function PrePick.Set(questID, itemID)
-	local store = NS.chardb and NS.chardb.prePicks
-	if not store or not questID then return end
-	store[questID] = itemID
+	return Model.SetSelectedRewardItemID(questID, itemID)
 end
 
 function PrePick.Clear(questID)
-	local store = NS.chardb and NS.chardb.prePicks
-	if store and questID then store[questID] = nil end
+	return Model.ClearSelection(questID)
 end
 
 --------------------------------------------------------------------------------
@@ -58,26 +49,30 @@ end
 -- (Render and the tooltip may ask several times in one frame).
 --------------------------------------------------------------------------------
 PrePick.PENDING_CACHE_SECONDS = 0.5
-local pendingCache = { at = -1, list = {} }
+local pendingCache = { at = -1, list = {}, selectionRevision = -1 }
 function PrePick.PendingQuests()
 	if not NS.loaded then return {} end
 	local now = NS.Now()
-	if now - pendingCache.at < PrePick.PENDING_CACHE_SECONDS then return pendingCache.list end
+	if now - pendingCache.at < PrePick.PENDING_CACHE_SECONDS and pendingCache.selectionRevision == Model.GetRevision() then
+		return pendingCache.list
+	end
 	local list = {}
 	local player = Rules.Player()
-	for _, entry in ipairs(NS.Client.QuestLogEntries()) do
-		local source = Rewards.LogSource(entry.questID)
+	for _, entry in ipairs(Data.ListQuests()) do
+		local source = Data.LogSource(entry.questID)
 		local n = NS.SafeNumber(source.Count()) or 0
 		if n >= 2 then
 			local item = { questID = entry.questID, title = entry.title, choiceCount = n, picked = PrePick.Get(entry.questID) }
 			local choices = Rewards.Gather(n, source)
-			local decision = Rewards.Evaluate(choices, NS.db.settings, player)
+			local decision = Data.Evaluate(choices, NS.db.settings, player, entry.questID)
 			item.pending = decision.pending == true
 			item.action = decision.action
+			item.prePickStatus = decision.prePickStatus
 			list[#list + 1] = item
 		end
 	end
 	pendingCache.at, pendingCache.list = now, list
+	pendingCache.selectionRevision = Model.GetRevision()
 	return list
 end
 
@@ -86,12 +81,19 @@ function PrePick.InvalidatePending()
 	pendingCache.at = -1
 end
 
+function PrePick.StatusText(quest)
+	if quest.pending then return L["item data not loaded"] end
+	if quest.prePickStatus == "matched" then return L["(your pick)"] end
+	if quest.picked then return L["(pick unavailable)"] end
+	return quest.action == "auto" and L["(auto)"] or L["(decide)"]
+end
+
 -- Opens the window on the first pending quest that needs the player (else the
 -- first pending quest at all). False when the log holds no quest with a choice.
 function PrePick.OpenAny()
-	if state.preview then return false end
+	if state.preview then PrePick.Dismiss() end
 	local pending = PrePick.PendingQuests()
-	if #pending == 0 then return false end
+	if #pending == 0 then return PrePick.ShowEmpty() end
 	local target = pending[1]
 	for _, q in ipairs(pending) do
 		if not q.picked and q.action ~= "auto" then target = q; break end
@@ -161,6 +163,11 @@ local function BuildFrame()
 	f.Reason:SetPoint("TOP", f.Title, "BOTTOM", 0, -3)
 	f.Reason:SetWidth(PrePick.WIDTH - 40)
 	f.Reason:SetJustifyH("CENTER")
+	f.Notice = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	f.Notice:SetPoint("TOP", f.Reason, "BOTTOM", 0, -6)
+	f.Notice:SetWidth(PrePick.WIDTH - 40)
+	f.Notice:SetJustifyH("CENTER")
+	f.Notice:SetTextColor(1, 0.65, 0.2)
 
 	f.Close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
 	f.Close:SetPoint("TOPRIGHT", f, "TOPRIGHT", 2, 2)
@@ -344,7 +351,7 @@ end
 local function WornStats(c)
 	local link = c.worn and c.worn.link
 	if not link then return {} end
-	return NS.Client.ItemStats(link) or {}
+	return Data.ItemStats(link)
 end
 
 function PrePick.StatDeltas(c, player)
@@ -352,10 +359,12 @@ function PrePick.StatDeltas(c, player)
 	local wornLevel = c.worn and c.worn.itemLevel or nil
 	out[#out + 1] = { label = L["ilevel"], value = c.itemLevel or 0, delta = wornLevel and ((c.itemLevel or 0) - wornLevel) or nil }
 	local worn = WornStats(c)
+	local wornKnown = worn ~= nil
+	worn = worn or {}
 	local keys = {}
 	for key, amount in pairs(c.stats or {}) do if amount ~= 0 then keys[#keys + 1] = key end end
 	for key, amount in pairs(worn) do
-		if amount ~= 0 and not (c.stats and c.stats[key]) then keys[#keys + 1] = key end
+		if amount ~= 0 and (not c.stats or not c.stats[key] or c.stats[key] == 0) then keys[#keys + 1] = key end
 	end
 	local weights = player and player.weights or {}
 	table.sort(keys, function(a, b)
@@ -366,15 +375,15 @@ function PrePick.StatDeltas(c, player)
 	for _, key in ipairs(keys) do
 		local mine = c.stats and c.stats[key] or 0
 		local theirs = worn[key]
-		out[#out + 1] = { label = Rules.StatName(key), value = mine, delta = (c.worn and c.worn.link) and (mine - (theirs or 0)) or nil }
+		out[#out + 1] = { label = Rules.StatName(key), value = mine, delta = wornKnown and c.worn and (mine - (theirs or 0)) or nil }
 	end
 	return out
 end
 
 local function FormatDelta(d)
 	if d == nil then return "" end
-	if d > 0 then return string.format(" |cff40ff40+%d|r", d) end
-	if d < 0 then return string.format(" |cffff4040%d|r", d) end
+	if d > 0 then return " |cff40ff40" .. Rewards.FormatAmount(d) .. "|r" end
+	if d < 0 then return " |cffff4040" .. Rewards.FormatAmount(d) .. "|r" end
 	return " |cff808080=|r"
 end
 
@@ -405,9 +414,19 @@ end
 -- Show / hide.
 --------------------------------------------------------------------------------
 function PrePick.Hide()
+	state.requestID = (state.requestID or 0) + 1
 	if frame then frame:Hide() end
+	if GameTooltip then GameTooltip:Hide() end
 	state.questID, state.choices, state.decision, state.preview = nil, nil, nil, nil
 	state.source = nil
+end
+
+function PrePick.ShowEmpty()
+	if not frame then frame = BuildFrame() end
+	state.requestID = (state.requestID or 0) + 1
+	state.questID, state.choices, state.decision, state.preview = 0, {}, nil, false
+	PrePick.Render()
+	return true
 end
 
 -- The close box and "Decide at hand-in": in preview mode they also untick the
@@ -421,31 +440,48 @@ function PrePick.Dismiss()
 	PrePick.Hide()
 end
 
+-- Minimap action: closing cancels outstanding item-load callbacks as well.
+function PrePick.Toggle()
+	if frame and frame:IsShown() then
+		PrePick.Dismiss()
+		return false
+	end
+	return PrePick.OpenAny()
+end
+
 -- Lays the current state out. Called by Open and when a pick changes.
 function PrePick.Render()
 	if not frame or not state.questID or not state.choices then return end
-	local title = state.preview and L["Sample quest"] or (NS.Client.QuestTitle(state.questID) or ("#" .. state.questID))
+	local title = state.preview and L["Sample quest"] or (Data.QuestTitle(state.questID) or ("#" .. state.questID))
+	if state.questID == 0 then title = L["Quest reward pre-selection"] end
 	frame.Title:SetText(string.format(L["Reward for %s"], title))
 	local decision = state.decision
 	if state.preview then
 		frame.Reason:SetText(L["Preview: drag me into place, then untick the setting to lock."])
+	elseif state.questID == 0 then
+		frame.Reason:SetText(L["No quest in your log has a reward to choose."])
 	else
-		frame.Reason:SetText(decision and Engine.LeaveReasonText(decision) or "")
+		frame.Reason:SetText(Data.DecisionText(decision))
 	end
+	frame.Notice:SetText(L["Pre-picks override reward recommendations, not automation safeguards."])
+	frame.Later:SetText(L["Close"])
 	local picked = PrePick.Get(state.questID)
-	local player = not state.preview and Rules.Player() or nil
+	local player = Rules.Player()
 	-- Quest list between the reason line and the rows: only with 2+ pending quests.
 	local pending = (not state.preview) and PrePick.PendingQuests() or {}
+	local headerHeight = 10 + frame.Title:GetStringHeight() + 3 + frame.Reason:GetStringHeight() + 6 + frame.Notice:GetStringHeight() + 12
+	frame.List:ClearAllPoints()
+	frame.List:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -headerHeight)
+	frame.List:SetWidth(PrePick.WIDTH - 40)
 	local listHeight = 0
-	if #pending >= 2 then
+	if #pending >= 1 then
 		for i, q in ipairs(pending) do
 			local line = QuestLine(i)
 			line.questID = q.questID
 			line:ClearAllPoints()
 			line:SetPoint("TOPLEFT", frame.List, "TOPLEFT", 0, -(i - 1) * PrePick.LIST_LINE_HEIGHT)
 			line:SetPoint("RIGHT", frame.List, "RIGHT", 0, 0)
-			local mark = q.picked and ("|cff40ff40" .. L["(your pick)"] .. "|r")
-				or (q.action == "auto" and ("|cff808080" .. L["(auto)"] .. "|r") or ("|cffffd100" .. L["(decide)"] .. "|r"))
+			local mark = PrePick.StatusText(q)
 			line.Text:SetText(string.format("%s  %s", q.title or ("#" .. q.questID), mark))
 			line.Current:SetShown(q.questID == state.questID)
 			line:Show()
@@ -458,7 +494,7 @@ function PrePick.Render()
 		for _, line in ipairs(questLines) do line:Hide() end
 		frame.List:Hide()
 	end
-	local y = -52 - listHeight
+	local y = -headerHeight - listHeight - 6
 	local shown = 0
 	for i, c in ipairs(state.choices) do
 		if c.lootType == Rewards.LOOT_ITEM then
@@ -481,7 +517,7 @@ function PrePick.Render()
 				row.Info:Hide()
 			else
 				for _, cell in ipairs(row.Cells) do FillCell(cell, nil) end
-				row.Info:SetText(Engine.ItemReasonText(c))
+				row.Info:SetText(Data.ItemText(c))
 				row.Info:Show()
 			end
 			row.Border:SetShown(isPicked or (picked == nil and isSuggested))
@@ -496,19 +532,17 @@ end
 
 -- The player clicked a reward: remember it (toggle off when clicked again).
 function PrePick.Choose(c)
-	if not c or not state.questID then return end
+	if not c or not c.itemID or c.loaded ~= true or not state.questID or state.questID <= 0 then return end
 	if state.preview then return end
 	PrePick.InvalidatePending()
 	if PrePick.Get(state.questID) == c.itemID then
 		PrePick.Clear(state.questID)
-		NS.Print(L["Pre-pick cleared for %s."], NS.Client.QuestTitle(state.questID) or state.questID)
+		NS.Print(L["Pre-pick cleared for %s."], Data.QuestTitle(state.questID) or state.questID)
 	else
-		PrePick.Set(state.questID, c.itemID)
-		NS.Print(L["Pre-pick for %s: %s. It will be taken automatically at hand-in."], NS.Client.QuestTitle(state.questID) or state.questID, Rewards.ChoiceLabel(c))
-		PrePick.Render()
-		NS.After(0.6, function() if state.questID then PrePick.Hide() end end)
-		return
+		if not PrePick.Set(state.questID, c.itemID) then return end
+		NS.Print(L["Pre-pick for %s: %s. Used at hand-in when automation is allowed."], Data.QuestTitle(state.questID) or state.questID, Rewards.ChoiceLabel(c))
 	end
+	state.decision = Data.Evaluate(state.choices, NS.db.settings, Rules.Player(), state.questID)
 	PrePick.Render()
 end
 
@@ -520,32 +554,34 @@ end
 -- gear. No quest is involved: clicks do nothing, the title says so, and hiding
 -- it re-locks.
 --------------------------------------------------------------------------------
--- The Deadmines reward set: a rare weapon, a rare mail chest, a Use trinket.
+-- Real sample items for preview: a sword, leather chest, and trinket.
 PrePick.SAMPLE_ITEM_IDS = {
-	2244,   -- Cruel Barb (one-hand sword, rare)
-	10399,  -- Blackened Defias Armor (mail chest, rare)
+	5191,   -- Cruel Barb (one-hand sword, rare)
+	10399,  -- Blackened Defias Armor (leather chest, rare)
 	19024,  -- Arena Grand Master (trinket, Use effect)
 }
 PrePick.SAMPLE_QUEST_ID = -1
 
 -- Gathers the sample items; retries while the client loads their data.
-local function LoadSample(attempt)
+local function LoadSample(attempt, requestID)
+	requestID = requestID or state.requestID
 	attempt = attempt or 1
-	if not state.preview then return end
-	local source = Rewards.ItemListSource(PrePick.SAMPLE_ITEM_IDS)
+	if not state.preview or requestID ~= state.requestID then return end
+	local source = Data.ItemListSource(PrePick.SAMPLE_ITEM_IDS)
 	local choices = Rewards.Gather(source.Count(), source)
-	local decision = Rewards.Evaluate(choices, NS.db.settings, Rules.Player())
+	local decision = Data.Evaluate(choices, NS.db.settings, Rules.Player())
 	if decision.pending and attempt < PrePick.MAX_LOAD_TRIES then
 		for _, c in ipairs(choices) do
 			if c.loaded == false and c.itemID then NS.Call("C_Item.RequestLoadItemDataByID", c.itemID) end
 		end
-		NS.After(PrePick.RETRY_DELAY, function() LoadSample(attempt + 1) end)
+		NS.After(PrePick.RETRY_DELAY, function() LoadSample(attempt + 1, requestID) end)
 	end
 	state.choices, state.decision, state.source = choices, decision, source
 	PrePick.Render()
 end
 
 function PrePick.SetUnlocked(unlocked)
+	state.requestID = (state.requestID or 0) + 1
 	if unlocked then
 		if not frame then frame = BuildFrame() end
 		state.questID, state.preview = PrePick.SAMPLE_QUEST_ID, true
@@ -564,27 +600,41 @@ end)
 
 -- Evaluates the log rewards of questID; opens the window when the engine would only
 -- recommend (or when force is set, e.g. /qam pick). Retries while item data loads.
-function PrePick.Open(questID, force, attempt)
+function PrePick.Open(questID, force, attempt, requestID)
+	if not requestID then
+		state.requestID = (state.requestID or 0) + 1
+		requestID = state.requestID
+	end
+	if requestID ~= state.requestID then return false end
 	attempt = attempt or 1
 	if not NS.db or not questID then return false end
-	local source = Rewards.LogSource(questID)
+	local source = Data.LogSource(questID)
 	local n = NS.SafeNumber(source.Count()) or 0
 	if n < 2 then
-		if force then NS.Print(L["%s has no reward to choose."], NS.Client.QuestTitle(questID) or questID) end
+		if force then NS.Print(L["%s has no reward to choose."], Data.QuestTitle(questID) or questID) end
 		return false
 	end
 	local choices = Rewards.Gather(n, source)
-	local decision = Rewards.Evaluate(choices, NS.db.settings, Rules.Player())
+	local decision = Data.Evaluate(choices, NS.db.settings, Rules.Player(), questID)
 	if decision.pending then
-		if attempt >= PrePick.MAX_LOAD_TRIES then return false end
+		if force then
+			if not frame then frame = BuildFrame() end
+			state.questID, state.choices, state.decision, state.preview = questID, choices, decision, false
+			PrePick.Render()
+		end
+		if attempt >= PrePick.MAX_LOAD_TRIES then
+			if force then NS.Print(L["the item data did not load in time"]) end
+			return false
+		end
 		for _, c in ipairs(choices) do
 			if c.loaded == false and c.itemID then NS.Call("C_Item.RequestLoadItemDataByID", c.itemID) end
 		end
-		NS.After(PrePick.RETRY_DELAY, function() PrePick.Open(questID, force, attempt + 1) end)
+		NS.After(PrePick.RETRY_DELAY, function() PrePick.Open(questID, force, attempt + 1, requestID) end)
 		return false
 	end
 	if not force and (decision.action == "auto" or not decision.index) then return false end
 	if not frame then frame = BuildFrame() end
+	state.preview = false
 	state.questID, state.choices, state.decision, state.source = questID, choices, decision, source
 	PrePick.Render()
 	return true
@@ -602,6 +652,11 @@ NS.RegisterEvent("QUEST_ACCEPTED", function(a, b)
 		PrePick.InvalidatePending()
 		-- A newly accepted quest takes the window; when its reward is auto and the
 		-- window already shows another quest, the quest list just gains a line.
+		-- Preserve the user's current selection when several quests arrive together.
+		if frame and frame:IsShown() then
+			if not state.preview then PrePick.Render() end
+			return
+		end
 		if not PrePick.Open(questID, false) and frame and frame:IsShown() and not state.preview then
 			PrePick.Render()
 		end
@@ -613,7 +668,6 @@ end)
 local function Forget(questID)
 	questID = NS.SafeNumber(questID)
 	if not questID then return end
-	PrePick.Clear(questID)
 	PrePick.InvalidatePending()
 	if state.questID == questID and not state.preview then
 		local wasShown = frame and frame:IsShown()
@@ -630,17 +684,14 @@ NS.RegisterEvent("QUEST_REMOVED", Forget)
 function PrePick.Command(rest)
 	local questID = tonumber(rest)
 	if not questID then
-		local ctx = NS.Client.RewardContext()
-		questID = ctx and ctx.questID
+		questID = Data.SelectedQuestID()
 	end
-	if not questID then
-		NS.Print(L["Select a quest in the log (or give its ID), then /qam pick."])
-		return
+	if not questID or questID <= 0 then
+		return PrePick.OpenAny()
 	end
 	PrePick.Open(questID, true)
 end
 
 function PrePick.DebugReport()
-	local store = NS.chardb and NS.chardb.prePicks or {}
-	NS.Print("Pre-picks: %d stored, window %s for %s", #NS.SortedKeys(store), frame and frame:IsShown() and "shown" or "hidden", tostring(state.questID))
+	NS.Print("Pre-picks: %d stored, window %s for %s", Model.GetSelectionCount(), frame and frame:IsShown() and "shown" or "hidden", tostring(state.questID))
 end

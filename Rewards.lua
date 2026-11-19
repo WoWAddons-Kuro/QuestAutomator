@@ -1,4 +1,4 @@
--- QuestAutomator: reading the reward choices of the open quest and
+-- Quest Automator: reading the reward choices of the open quest and
 -- picking one. Item facts come from C_Item (GetItemInfoInstant for class,
 -- subclass and slot; GetItemInfo for vendor price and item level), the stats
 -- from C_Item.GetItemStats when it answers and otherwise from the reward's
@@ -32,25 +32,49 @@ Rewards.OFFER = {
 -- The quest log counts item choices only (GetNumQuestLogChoices(questID), the
 -- QuestUtils_GetBestQualityItemRewardIndex convention) and indexes them the way
 -- QuestInfo.lua numbers its buttons in questLog mode (choiceItemIndex).
--- Item facts are then read by itemID (itemBased), not by log index, because the
--- index-based log globals answer for the *selected* log quest on both clients.
 function Rewards.LogSource(questID)
 	return {
 		name = "log",
-		itemBased = true,
 		questID = questID,
-		Count = function() return NS.Client.LogChoiceCount(questID) end,
+		Count = function() return NS.Call("GetNumQuestLogChoices", questID) end,
 		LootType = function() return Rewards.LOOT_ITEM end,
-		Info = function(i) return NS.Client.LogChoiceInfo(i, questID) end,
-		-- Nil on purpose: FillFromItem resolves the link from the itemID. The
-		-- index link (GetQuestLogItemLink) belongs to the selected log quest.
-		Link = function() return nil end,
-		Tooltip = function(i) return NS.Client.LogChoiceTooltip(i, questID) end,
+		Info = function(i) return NS.Call("GetQuestLogChoiceInfo", i, questID) end,
+		Link = function(i) return NS.Call("GetQuestLogItemLink", "choice", i) end,
+		Tooltip = function(i) return NS.Call("C_TooltipInfo.GetQuestLogItem", "choice", i, questID) end,
 	}
 end
 
--- Format strings for the tooltip parser live in the client adapter
--- (NS.Client.StatFormats(): Forever's rating strings, Era's vanilla ones).
+-- This build's format strings (GlobalStrings on wago.tools, build 1.60.1.69893,
+-- enUS and zhCN), used when the client's global is missing or does not match.
+-- The client's own value is always tried first.
+Rewards.FORMATS = {
+	ITEM_MOD_MANA = { "%c%s Mana", "%c%s 法力" },
+	ITEM_MOD_HEALTH = { "%c%s Health", "%c%s 生命" },
+	ITEM_MOD_AGILITY = { "%c%s Agility", "%c%s 敏捷" },
+	ITEM_MOD_STRENGTH = { "%c%s Strength", "%c%s 力量" },
+	ITEM_MOD_SPIRIT = { "%c%s Spirit", "%c%s 精神" },
+	ITEM_MOD_STAMINA = { "%c%s Stamina", "%c%s 耐力" },
+	ITEM_MOD_INTELLECT = { "%c%s Intellect", "%c%s 智力" },
+	ITEM_MOD_DEFENSE_SKILL_RATING = { "Increases defense skill by %s.", "防御技能提高%s点。" },
+	ITEM_MOD_DODGE_RATING = { "Increases your dodge by %s.", "使你的躲闪提高%s点。" },
+	ITEM_MOD_PARRY_RATING = { "Increases your parry by %s.", "使你的招架提高%s点。" },
+	ITEM_MOD_BLOCK_RATING = { "Increases your shield block by %s.", "使你的盾牌格挡提高%s点。" },
+	ITEM_MOD_HIT_RATING = { "Increases your hit by %s.", "使你的命中提高%s点。" },
+	ITEM_MOD_CRIT_RATING = { "Increases your critical strike by %s.", "使你的爆击提高%s点。" },
+	ITEM_MOD_HASTE_RATING = { "Increases your haste by %s.", "使你的急速提高%s点。" },
+	ITEM_MOD_SPELL_HEALING_DONE = { "Increases healing done by magical spells and effects by up to %s.", "魔法法术和效果的治疗量提高最多%s点。" },
+	ITEM_MOD_SPELL_DAMAGE_DONE = { "Increases damage done by magical spells and effects by up to %s.", "魔法法术和效果的伤害量提高最多%s点。" },
+	ITEM_MOD_ATTACK_POWER = { "Increases attack power by %s.", "攻击强度提高%s点。" },
+	ITEM_MOD_RANGED_ATTACK_POWER = { "Increases ranged attack power by %s.", "远程攻击强度提高%s点。" },
+	ITEM_MOD_FERAL_ATTACK_POWER = { "Increases attack power by %s in Cat, Bear, Dire Bear, and Moonkin forms only.", "在猎豹、巨熊、巨熊（增强）和枭兽形态下攻击强度提高%s点。" },
+	ITEM_MOD_MANA_REGENERATION = { "Restores %s mana per 5 sec.", "每5秒回复%s点法力值。" },
+	ITEM_MOD_HEALTH_REGENERATION = { "Restores %s health per 5 sec.", "每5秒回复%s点生命值。" },
+	ITEM_MOD_SPELL_POWER = { "Increases spell power by %s.", "法术强度提高%s点。" },
+	ITEM_MOD_BLOCK_VALUE = { "Increases the block value of your shield by %s.", "使你的盾牌格挡值提高%s点。" },
+	DPS_TEMPLATE = { "(%s damage per second)", "（每秒伤害%s）" },
+	ARMOR_TEMPLATE = { "%s Armor", "%s点护甲" },
+	ITEM_SPELL_TRIGGER_ONEQUIP = { "Equip:", "装备：" },
+}
 
 -- Tag -> stat key for the pseudo-stats.
 Rewards.TEMPLATE_KEYS = { DPS_TEMPLATE = "DAMAGE_PER_SECOND", ARMOR_TEMPLATE = "ARMOR" }
@@ -69,10 +93,6 @@ function Rewards.CompilePattern(fmt)
 	while i <= n do
 		local c = fmt:sub(i, i)
 		if c == "%" then
-			if fmt:sub(i, i + 1) == "%%" then
-				out[#out + 1] = "%%"
-				i = i + 2
-			else
 			local pos, spec = fmt:match("^%%(%d*%$?)([csd])", i)
 			if spec then
 				i = i + 2 + #pos
@@ -86,7 +106,6 @@ function Rewards.CompilePattern(fmt)
 			else
 				out[#out + 1] = "%%"
 				i = i + 1
-			end
 			end
 		else
 			if c:match("[%^%$%(%)%.%[%]%*%+%-%?]") then
@@ -107,8 +126,7 @@ function Rewards.FormatsFor(tag)
 	local list = {}
 	local live = _G[tag]
 	if type(live) == "string" and live ~= "" then list[#list + 1] = live end
-	local formats = NS.Client.StatFormats()
-	for _, fmt in ipairs(formats[tag] or {}) do
+	for _, fmt in ipairs(Rewards.FORMATS[tag] or {}) do
 		if fmt ~= live then list[#list + 1] = fmt end
 	end
 	return list
@@ -182,111 +200,48 @@ end
 -- names (retail behaviour; unverified on Forever, hence the tooltip fallback).
 function Rewards.StatsFromAPI(link)
 	if not link then return nil end
-	return NS.Client.ItemStats(link)
+	local t = NS.Call("C_Item.GetItemStats", link)
+	if type(t) ~= "table" then return nil end
+	local stats, any = {}, false
+	for k, v in pairs(t) do
+		k, v = NS.SafeString(k), NS.SafeNumber(v)
+		if k and v then
+			local key = k:match("^ITEM_MOD_(.+)_SHORT$") or k:match("^ITEM_MOD_(.+)$")
+			if k == "RESISTANCE0_NAME" then key = "ARMOR" end
+			if key then
+				stats[key] = (stats[key] or 0) + v
+				any = true
+			end
+		end
+	end
+	if any then return stats end
+	return nil
 end
 
 function Rewards.StatsFromTooltip(index, kind)
 	return Rewards.StatsFromTooltipData(NS.Call("C_TooltipInfo.GetQuestItem", kind or "choice", index))
 end
 
--- Trigger prefixes that mark an effect line: "Use:", "Chance on hit:", "Equip:".
--- A line starting with one of these that the stat parser cannot read is an effect
--- the engine cannot value (spec tier 1). Live globals first, then the enUS text.
-local TRIGGER_FALLBACKS = {
-	ITEM_SPELL_TRIGGER_ONUSE = { "Use:", "使用：" },
-	ITEM_SPELL_TRIGGER_ONPROC = { "Chance on hit:", "击中时可能：" },
-	ITEM_SPELL_TRIGGER_ONEQUIP = { "Equip:", "装备：" },
-}
-local function StartsWithTrigger(text, tag)
-	local live = _G[tag]
-	if type(live) == "string" and live ~= "" and text:sub(1, #live) == live then return true end
-	for _, prefix in ipairs(TRIGGER_FALLBACKS[tag] or {}) do
-		if text:sub(1, #prefix) == prefix then return true end
-	end
-	return false
-end
-
--- -> stats table (or nil), effects = { use = bool, proc = bool, unknownEquip = bool }
 function Rewards.StatsFromTooltipData(data)
-	local effects = { use = false, proc = false, unknownEquip = false }
-	if type(data) ~= "table" or type(data.lines) ~= "table" then return nil, effects end
+	if type(data) ~= "table" or type(data.lines) ~= "table" then return nil end
 	local stats, any = {}, false
 	for _, line in ipairs(data.lines) do
 		local text = type(line) == "table" and NS.SafeString(line.leftText) or nil
 		if text then
-			local plain = StripCodes(text)
 			local key, value = Rewards.ParseStatLine(text)
 			if key then
 				stats[key] = (stats[key] or 0) + value
 				any = true
-			elseif StartsWithTrigger(plain, "ITEM_SPELL_TRIGGER_ONUSE") then
-				effects.use = true
-			elseif StartsWithTrigger(plain, "ITEM_SPELL_TRIGGER_ONPROC") then
-				effects.proc = true
-			elseif StartsWithTrigger(plain, "ITEM_SPELL_TRIGGER_ONEQUIP") then
-				effects.unknownEquip = true
 			end
 		end
 	end
-	if any then return stats, effects end
-	return nil, effects
+	if any then return stats end
+	return nil
 end
 
 --------------------------------------------------------------------------------
 -- The choices of the open reward panel.
--- Where the source knows the item (a quest-log entry, a fixed item list) the item
--- facts are read by *itemID*: link, quality, item level and vendor price from
--- C_Item.GetItemInfo(itemID), effect lines from C_TooltipInfo.GetItemByID, so
--- nothing depends on which log quest happens to be selected. The NPC offer panel
--- keeps its own tooltip (GetQuestItem).
 --------------------------------------------------------------------------------
--- Reads the choice's own facts from the item (itemID preferred, link otherwise).
-function Rewards.FillFromItem(c, source)
-	local ref = c.itemID or c.link
-	if not ref then
-		c.loaded = false
-		return c
-	end
-	local id, _, _, equipLoc, _, classID, subclassID = NS.Call("C_Item.GetItemInfoInstant", ref)
-	c.itemID = c.itemID or NS.SafeNumber(id)
-	c.equipLoc = NS.SafeString(equipLoc)
-	c.classID = NS.SafeNumber(classID)
-	c.subclassID = NS.SafeNumber(subclassID)
-	local iname, ilink, iquality, ilvl, minLevel, _, _, _, _, _, sellPrice = NS.Call("C_Item.GetItemInfo", ref)
-	if NS.SafeString(iname) then
-		c.loaded = true
-		c.name = c.name or NS.SafeString(iname)
-		c.link = c.link or NS.SafeString(ilink)
-		c.quality = NS.SafeNumber(iquality) or c.quality
-		c.itemLevel = NS.SafeNumber(ilvl) or 0
-		c.minLevel = NS.SafeNumber(minLevel) or 0
-		c.sellPrice = NS.SafeNumber(sellPrice) or 0
-	else
-		c.loaded = false
-	end
-	local stats = Rewards.StatsFromAPI(c.link)
-	c.statsSource = stats and "api" or nil
-	-- The tooltip is always read for effect lines (Use / Chance on hit /
-	-- unparsed Equip), even when the API already gave the stats.
-	local tipData
-	if source and source.itemBased and c.itemID then
-		tipData = NS.Call("C_TooltipInfo.GetItemByID", c.itemID)
-	elseif source and source.Tooltip then
-		tipData = source.Tooltip(c.index)
-	end
-	if not tipData and c.link then tipData = NS.Call("C_TooltipInfo.GetHyperlink", c.link) end
-	local tooltipStats, effects = Rewards.StatsFromTooltipData(tipData)
-	if not stats then
-		stats = tooltipStats
-		c.statsSource = stats and "tooltip" or "none"
-	end
-	c.hasUseEffect = effects.use
-	c.hasProcEffect = effects.proc
-	c.hasUnknownEquip = effects.unknownEquip
-	c.stats = stats or {}
-	return c
-end
-
 function Rewards.Gather(numChoices, source)
 	source = source or Rewards.OFFER
 	local choices = {}
@@ -301,37 +256,38 @@ function Rewards.Gather(numChoices, source)
 			c.usable = NS.Safe(usable) ~= false and NS.Safe(usable) ~= 0
 			c.itemID = NS.SafeNumber(itemID)
 			c.link = NS.SafeString(source.Link(i))
-			-- Era's log info has no itemID: take it from the link.
-			if not c.itemID and c.link then
-				c.itemID = NS.SafeNumber((NS.Call("C_Item.GetItemInfoInstant", c.link)))
+			local ref = c.link or c.itemID
+			if ref then
+				local id, _, _, equipLoc, _, classID, subclassID = NS.Call("C_Item.GetItemInfoInstant", ref)
+				c.itemID = c.itemID or NS.SafeNumber(id)
+				c.equipLoc = NS.SafeString(equipLoc)
+				c.classID = NS.SafeNumber(classID)
+				c.subclassID = NS.SafeNumber(subclassID)
+				local iname, _, iquality, ilvl, minLevel, _, _, _, _, _, sellPrice = NS.Call("C_Item.GetItemInfo", ref)
+				if NS.SafeString(iname) then
+					c.loaded = true
+					c.name = c.name or NS.SafeString(iname)
+					c.quality = NS.SafeNumber(iquality) or c.quality
+					c.itemLevel = NS.SafeNumber(ilvl) or 0
+					c.minLevel = NS.SafeNumber(minLevel) or 0
+					c.sellPrice = NS.SafeNumber(sellPrice) or 0
+				else
+					c.loaded = false
+				end
+				local stats = Rewards.StatsFromAPI(c.link)
+				c.statsSource = stats and "api" or nil
+				if not stats then
+					stats = Rewards.StatsFromTooltipData(source.Tooltip(i))
+					c.statsSource = stats and "tooltip" or "none"
+				end
+				c.stats = stats or {}
+			else
+				c.loaded = false
 			end
-			Rewards.FillFromItem(c, source)
 		end
 		choices[#choices + 1] = c
 	end
 	return choices
-end
-
--- A fixed list of item IDs as a reward source (the pick window's preview rows).
--- Choice i is itemIDs[i]; count 1, always usable.
-function Rewards.ItemListSource(itemIDs)
-	return {
-		name = "items",
-		itemBased = true,
-		itemIDs = itemIDs,
-		Count = function() return #itemIDs end,
-		LootType = function() return Rewards.LOOT_ITEM end,
-		Info = function(i)
-			local id = itemIDs[i]
-			local name, _, quality = NS.Call("C_Item.GetItemInfo", id)
-			return name, nil, 1, quality, true, id
-		end,
-		Link = function(i)
-			local _, link = NS.Call("C_Item.GetItemInfo", itemIDs[i])
-			return link
-		end,
-		Tooltip = function(i) return NS.Call("C_TooltipInfo.GetItemByID", itemIDs[i]) end,
-	}
 end
 
 --------------------------------------------------------------------------------
@@ -368,10 +324,133 @@ function Rewards.FitScore(c, player)
 	return { score = typeScore * (1 + statScore), typeScore = typeScore, statScore = statScore, parts = parts, typeName = typeName }
 end
 
--- The decision itself is the priority engine's (Engine.lua); this is the entry
--- point Automation and Glow call. RewardDecision shape: see Engine.Evaluate.
+local function Value(c)
+	return (c.sellPrice or 0) * (c.count or 1)
+end
+
+-- a beats b: fit score, then vendor value, then quality, then item level, then the earlier slot.
+function Rewards.Better(a, b)
+	local fa, fb = a.fit and a.fit.score or 0, b.fit and b.fit.score or 0
+	if fa ~= fb then return fa > fb end
+	if Value(a) ~= Value(b) then return Value(a) > Value(b) end
+	if (a.quality or 0) ~= (b.quality or 0) then return (a.quality or 0) > (b.quality or 0) end
+	if (a.itemLevel or 0) ~= (b.itemLevel or 0) then return (a.itemLevel or 0) > (b.itemLevel or 0) end
+	return a.index < b.index
+end
+
+function Rewards.ByValue(items, reason)
+	local best
+	for _, c in ipairs(items) do
+		c.value = Value(c)
+		if c.value > 0 then
+			if not best or c.value > best.value
+				or (c.value == best.value and ((c.quality or 0) > (best.quality or 0)
+					or ((c.quality or 0) == (best.quality or 0) and (c.itemLevel or 0) > (best.itemLevel or 0)))) then
+				best = c
+			end
+		end
+	end
+	if best then return { index = best.index, choice = best, reason = reason or "value" } end
+	return { reason = "novalue" }
+end
+
+-- Kinds of reward the addon does not pick unless the matching setting allows it.
+-- When at least one is among the choices, the whole choice is the player's.
+-- Checked in this order.
+Rewards.KINDS = {
+	{ key = "weapons", reason = "weapon", Is = function(c) return Rules.IsWeapon(c.classID, c.subclassID) end },
+	{ key = "trinkets", reason = "trinket", Is = function(c) return Rules.IsTrinket(c.equipLoc) end },
+}
+
+-- The rewards to score, or nil and the reason the choice is handed to the player.
+function Rewards.ApplyKinds(items, settings)
+	for _, kind in ipairs(Rewards.KINDS) do
+		if not settings[kind.key] then
+			for _, c in ipairs(items) do
+				if kind.Is(c) then return nil, kind.reason end
+			end
+		end
+	end
+	return items
+end
+
+-- Decision: { index, choice, reason } when the addon picks, { reason } when the
+-- choice is left to the player, { pending = true } while item data is missing.
 function Rewards.Evaluate(choices, settings, player)
-	return NS.Engine.Evaluate(choices, settings, player)
+	if settings.rewardMode == "manual" then return { reason = "manual" } end
+	local items = {}
+	for _, c in ipairs(choices) do
+		if c.lootType == Rewards.LOOT_ITEM then items[#items + 1] = c end
+	end
+	if #items == 0 then return { reason = "currency" } end
+	for _, c in ipairs(items) do
+		if not c.loaded then return { pending = true } end
+	end
+	-- A reward at or above the manual-quality threshold is the player's call.
+	local threshold = tonumber(settings.manualQuality)
+	if threshold and threshold >= 0 then
+		local notable
+		for _, c in ipairs(items) do
+			if (c.quality or 0) >= threshold and (not notable or (c.quality or 0) > (notable.quality or 0)) then notable = c end
+		end
+		if notable then return { reason = "quality", choice = notable, quality = notable.quality } end
+	end
+	-- Weapons and trinkets are the player's call unless allowed, in either mode.
+	local pool, handOff = Rewards.ApplyKinds(items, settings)
+	if not pool then return { reason = handOff } end
+	if settings.rewardMode == "value" then return Rewards.ByValue(pool, "value") end
+
+	for _, c in ipairs(pool) do
+		c.fit = Rewards.FitScore(c, player)
+	end
+
+	-- Weapon kind. The best weapon of the kind the class wants (ranged for a hunter, melee
+	-- for the melee classes) beats every weapon of the other kind, however they score.
+	-- Between that weapon and the rest (armour, rings...) the score decides. A weapon of
+	-- the other kind keeps its score: it competes with the rest as usual, wins outright when
+	-- no wanted-kind weapon is offered, and when it beats the rest it is the wanted weapon,
+	-- not the rest, that is taken.
+	local wanted
+	if settings.weapons and player.weaponKind then
+		for _, c in ipairs(pool) do
+			if c.fit.score > 0 and Rules.IsWeapon(c.classID, c.subclassID)
+				and Rules.WeaponCategory(c.subclassID) == player.weaponKind
+				and (not wanted or Rewards.Better(c, wanted)) then
+				wanted = c
+			end
+		end
+	end
+
+	local best
+	if wanted then
+		local other
+		for _, c in ipairs(pool) do
+			if c ~= wanted and c.fit.score > 0 then
+				if Rules.IsWeapon(c.classID, c.subclassID) and Rules.WeaponCategory(c.subclassID) ~= player.weaponKind then
+					c.fit.otherKind = true
+				end
+				if not other or Rewards.Better(c, other) then other = c end
+			end
+		end
+		if not other or Rules.IsWeapon(other.classID, other.subclassID) then
+			best = wanted
+		else
+			best = Rewards.Better(wanted, other) and wanted or other
+		end
+	else
+		for _, c in ipairs(pool) do
+			if c.fit.score > 0 and (not best or Rewards.Better(c, best)) then best = c end
+		end
+	end
+	if best then return { index = best.index, choice = best, reason = "fit", pool = pool } end
+	if settings.fallbackToValue then
+		local decision = Rewards.ByValue(pool, "fallback")
+		if decision.index then
+			decision.pool = pool
+			return decision
+		end
+	end
+	return { reason = "nofit", pool = pool }
 end
 
 --------------------------------------------------------------------------------
@@ -382,6 +461,39 @@ local function FormatAmount(amount)
 	return format("%+.1f", amount)
 end
 Rewards.FormatAmount = FormatAmount
+
+function Rewards.Describe(decision)
+	local c = decision.choice
+	if not c then return "" end
+	if decision.reason == "prepick" then return L["your pre-pick"] end
+	if decision.reason == "fit" then
+		local bits = {}
+		if c.fit and c.fit.typeName then bits[#bits + 1] = c.fit.typeName end
+		for i = 1, math.min(3, c.fit and #c.fit.parts or 0) do
+			local p = c.fit.parts[i]
+			bits[#bits + 1] = FormatAmount(p.amount) .. " " .. Rules.StatName(p.key)
+		end
+		if #bits == 0 then bits[1] = L["usable by your class"] end
+		return format(L["best fit: %s"], table.concat(bits, ", "))
+	elseif decision.reason == "fallback" then
+		return format(L["nothing fits, most valuable: %s"], NS.FormatMoney(c.value or Value(c)))
+	end
+	return format(L["most valuable: %s"], NS.FormatMoney(c.value or Value(c)))
+end
+
+function Rewards.ReasonText(reason, decision)
+	if reason == "manual" then return L["reward choice is set to manual"] end
+	if reason == "quality" then
+		return format(L["a %s reward is offered"], NS.QualityName(decision and decision.quality or 0))
+	end
+	if reason == "weapon" then return L["a weapon is offered"] end
+	if reason == "trinket" then return L["a trinket is offered"] end
+	if reason == "nofit" then return L["none of the rewards fits your class"] end
+	if reason == "novalue" then return L["the rewards have no vendor value"] end
+	if reason == "currency" then return L["only currencies are offered"] end
+	if reason == "pending" then return L["the item data did not load in time"] end
+	return tostring(reason)
+end
 
 function Rewards.ChoiceLabel(c)
 	return c.link or c.name or (c.itemID and ("item:" .. c.itemID)) or "?"

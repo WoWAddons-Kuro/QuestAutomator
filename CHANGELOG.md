@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+### Pre-pick consumption checkpoint (v2026.11.18.1709, in-game test pending)
+- Owner confirmed the previous resolver checkpoint turns quests in successfully.
+- Loaded PrePickModel; the picker delegates storage, validation and lifecycle cleanup to it.
+- Resolver matches saved item IDs to current offered indices, waits for unloaded data, and falls
+  back to original rules for absent/ambiguous rewards. No changes to Automation.lua or Glow.lua.
+- Picker and minimap show your pick/loading/unavailable states; removed active saved-only messages.
+- Original Rewards scoring remains unchanged; Describe now labels selected rewards as your pre-pick.
+- Added reordered-hand-in, selection-change-on-retry, five-return Era item info, and cleanup tests.
+
+### Turn-in resolver checkpoint (in-game test pending)
+- Extracted submit/manual/wait decisions into TurnInResolver.lua; only Auto.Choose calls it so far.
+- Preserves original 0/1/multiple reward choice behaviour and all existing controller safeguards.
+- Malformed/failed resolver responses leave the dialog manual; no automatic fallback on errors.
+- Pre-picks, model migration and glow integration remain deferred until the owner tests this checkpoint.
+- Minimap left-click now toggles the pre-picker open/closed; right-click still opens settings.
+
+### Restored runtime / minimal UI test baseline
+- Copied original runtime from SmartQuestAutomation_forkbase.zip; deleted Client.lua and Engine.lua.
+- Reward scoring, rules, glow and XP code retain ZIP logic, with mechanical naming only.
+- Automation has one targeted correction: when gossip says incomplete, query IsQuestComplete(questID).
+  Live dumps confirmed this distinction for Rude Awakening. Mock regression and safety checks pass.
+- Kept the cleaned settings layout and UI/Prepick.lua. Original reward mode, weapon/trinket,
+  fallback and quality controls work; tier/sidegrade/proficiency/value-source controls are marked
+  **Not implemented — no effect** and store state only.
+- Pre-picker supports real-item preview, quest browsing and stored selections. Stored picks are
+  explicitly **not applied at hand-in**; they cannot change the restored reward policy.
+- Minimap left-click opens the pre-picker (including an empty state); right-click opens settings.
+- Added Lua 5.1 mock smoke tests and exact comparison with the source ZIP. In-game testing pending.
+
+## Earlier refactor (removed; historical notes below)
+
 ### Fork
 - Forked Smart Quest Automation 0.3.0 (qqytqqyt) as **QuestAutomator**. Every global renamed so both can
   be installed: `QuestAutomatorDB` / `QuestAutomatorCharDB`, slash `/qam` and `/questautomator`,

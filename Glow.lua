@@ -1,4 +1,4 @@
--- QuestAutomator: shows the reward the addon would take before it is taken.
+-- Quest Automator: shows the reward the addon would take before it is taken.
 -- Whenever Blizzard lays out a quest's rewards (QuestInfo_ShowRewards: the quest log's
 -- details panel, the NPC's quest detail panel and its reward panel) the scorer the
 -- automation uses runs on the choices, and the winning icon gets the action bar's proc
@@ -108,15 +108,24 @@ function Glow.Shown()
 end
 
 --------------------------------------------------------------------------------
--- What reward panel is on screen (client adapter), and what the automation would do.
+-- What Blizzard's QuestInfoFrame is showing, and what the automation would do.
 --------------------------------------------------------------------------------
 local function Context()
-	-- { questID, questLog, buttons (choice item buttons with :GetID()), frame, source }
-	-- from the client adapter; nil when no reward panel is on screen.
-	local ctx = NS.Client.RewardContext()
-	if not ctx then return nil end
-	ctx.rewardsFrame = ctx.frame
-	return ctx
+	local info = QuestInfoFrame
+	if type(info) ~= "table" then return nil end
+	local rewardsFrame = info.rewardsFrame
+	if type(rewardsFrame) ~= "table" or type(rewardsFrame.RewardButtons) ~= "table" then return nil end
+	local questID, source
+	if info.questLog then
+		questID = NS.SafeNumber(NS.Call("C_QuestLog.GetSelectedQuest"))
+		if not questID or questID == 0 then return nil end
+		source = Rewards.LogSource(questID)
+	else
+		questID = NS.SafeNumber(NS.Call("GetQuestID"))
+		if questID == 0 then questID = nil end
+		source = Rewards.OFFER
+	end
+	return { rewardsFrame = rewardsFrame, questID = questID, source = source, questLog = info.questLog and true or false }
 end
 
 local function FrameShown(frame)
@@ -124,8 +133,7 @@ local function FrameShown(frame)
 	return ok and shown == true
 end
 
--- What the engine favours here: the decision (index = the reward to glow, action =
--- whether it would be clicked) when it evaluated,
+-- Would the automation pick a reward here? The decision (with index) when it would,
 -- { pending = true } plus the choices while item data is missing, nil otherwise.
 function Glow.Decide(ctx)
 	if not NS.db then return nil end
@@ -133,24 +141,24 @@ function Glow.Decide(ctx)
 	if not (s.enabled and s.turnIn) then return nil, "off" end
 	if NS.Auto and NS.Auto.SessionPaused() then return nil, "paused" end
 	local questID = ctx.questID
-	local repeatable = questID and NS.Client.IsQuestRepeatable(questID) or false
+	local repeatable = questID and NS.SafeBool(NS.Call("C_QuestLog.IsRepeatableQuest", questID)) or false
 	local ok, why = NS.Auto.MayTurnIn(questID, repeatable)
 	if not ok then return nil, why end
 	local n = NS.SafeNumber(ctx.source.Count()) or 0
 	if n < 2 then return nil, "nochoice" end
 	local choices = Rewards.Gather(n, ctx.source)
-	-- The glow marks the engine's pick in both "auto" and "recommend": recommend is
-	-- exactly when the player needs the hint. The pre-pick for this quest applies.
-	local decision = Rewards.Evaluate(choices, NS.Auto.SettingsFor(questID), Rules.Player())
+	local decision = Rewards.Evaluate(choices, s, Rules.Player())
 	if decision.pending then return decision, "pending", choices, decision end
 	if not decision.index then return nil, decision.reason, choices, decision end
-	return decision, decision.action, choices, decision
+	return decision, "pick", choices, decision
 end
 
-local function FindButton(ctx, index)
-	for _, button in ipairs(ctx.buttons or {}) do
-		local ok, id = pcall(button.GetID, button)
-		if ok and id == index then return button end
+local function FindButton(rewardsFrame, index)
+	for _, button in ipairs(rewardsFrame.RewardButtons) do
+		if type(button) == "table" and FrameShown(button) and button.type == "choice" and button.objectType == "item" then
+			local ok, id = pcall(button.GetID, button)
+			if ok and id == index then return button end
+		end
 	end
 	return nil
 end
@@ -176,7 +184,7 @@ function Glow.Refresh(attempt)
 		NS.After(Glow.RETRY_DELAY, function() Glow.Retry(generation) end)
 		return nil
 	end
-	local button = FindButton(ctx, decision.index)
+	local button = FindButton(ctx.rewardsFrame, decision.index)
 	if not button then return nil end
 	ShowGlow(button)
 	state.decision = decision
@@ -203,8 +211,7 @@ function Glow.OnSettingsChanged()
 end
 
 --------------------------------------------------------------------------------
--- Hook (names from the client adapter: QuestInfo_Display, QuestInfo_ShowRewards, and on
--- Era QuestFrameItems_Update for the quest log). QuestInfo.lua lays a panel out with QuestInfo_Display(template, ...),
+-- Hook. Mainline\QuestInfo.lua lays a panel out with QuestInfo_Display(template, ...),
 -- which walks template.elements and calls each entry; the templates
 -- (QUEST_TEMPLATE_DETAIL, _LOG, _REWARD, _MAP_REWARDS) hold QuestInfo_ShowRewards as a
 -- function *value*, so a hook on that global name never runs for a template-driven
@@ -225,7 +232,7 @@ function Glow.Install()
 		return false
 	end
 	local any = false
-	for _, name in ipairs(NS.Client.RewardLayoutHooks()) do
+	for _, name in ipairs({ "QuestInfo_Display", "QuestInfo_ShowRewards" }) do
 		if type(_G[name]) == "function" then
 			hooksecurefunc(name, OnLayout)
 			NS.features[name] = true
@@ -250,7 +257,7 @@ function Glow.WhyText(why, decision)
 	if why == "repeatable" then return L["repeatable quests are not handed in automatically"] end
 	if why == "nochoice" then return L["there is nothing to choose"] end
 	if why == "pending" then return L["the item data did not load in time"] end
-	return NS.Engine.LeaveReasonText(decision)
+	return Rewards.ReasonText(why, decision)
 end
 
 local function ChoiceLine(c)
@@ -273,8 +280,17 @@ local function ChoiceLine(c)
 		if c.loaded == false then
 			bits[#bits + 1] = L["item data not loaded"]
 		else
-			bits[#bits + 1] = NS.FormatMoney(c.value or (c.sellPrice or 0) * (c.count or 1))
-			bits[#bits + 1] = NS.Engine.ItemReasonText(c)
+			bits[#bits + 1] = NS.FormatMoney((c.sellPrice or 0) * (c.count or 1))
+		end
+		if c.fit then
+			if c.fit.score > 0 then
+				bits[#bits + 1] = string.format(L["score %.1f"], c.fit.score)
+			elseif c.fit.why == "notgear" then
+				bits[#bits + 1] = L["not equipment"]
+			else
+				bits[#bits + 1] = L["cannot use"]
+			end
+			if c.fit.otherKind then bits[#bits + 1] = L["not the preferred weapon kind"] end
 		end
 	end
 	NS.Print("  %d. %s: %s", c.index, Rewards.ChoiceLabel(c), table.concat(bits, " | "))
@@ -286,14 +302,14 @@ function Glow.Explain()
 		NS.Print(L["No quest rewards are on screen. Open a quest in the log or talk to a quest giver, then try again."])
 		return false
 	end
-	local title = ctx.questID and NS.Client.QuestTitle(ctx.questID) or nil
+	local title = ctx.questID and NS.SafeString(NS.Call("C_QuestLog.GetTitleForQuestID", ctx.questID)) or nil
 	if not title or title == "" then title = NS.SafeString(NS.Call("GetTitleText")) end
 	if not title or title == "" then title = ctx.questID and ("#" .. ctx.questID) or "?" end
 	NS.Print(L["Rewards of %s (%s):"], title, ctx.questLog and L["quest log"] or L["quest giver"])
 	local decision, why, choices, evaluated = Glow.Decide(ctx)
 	for _, c in ipairs(choices or {}) do ChoiceLine(c) end
 	if decision and decision.index then
-		NS.Print(L["Would take #%d: %s"], decision.index, string.format("%s: %s%s", NS.Engine.TierName(decision.tier), NS.Engine.Describe(decision), decision.action == "auto" and "" or (" - " .. L["recommend only"])))
+		NS.Print(L["Would take #%d: %s"], decision.index, Rewards.Describe(decision))
 	else
 		NS.Print(L["Left to you: %s"], Glow.WhyText(why, evaluated))
 	end

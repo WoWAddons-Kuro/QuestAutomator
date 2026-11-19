@@ -159,7 +159,7 @@ local function Build()
 	sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
 	sub:SetWidth(560)
 	sub:SetJustifyH("LEFT")
-	sub:SetText(L["Accepts and hands in quests for you and picks the reward. Rewards go through the tiers below, first match wins; each tier either picks automatically or only recommends (the suggested reward glows and the window stays open). Hold the pause key while talking to an NPC to do that conversation by hand."])
+	sub:SetText(L["Uses original quest automation. Valid pre-picks override automatic reward recommendations. Controls marked Not implemented remain saved-only placeholders."])
 
 	local last, lastDy = sub, -14
 	local function Place(w, dy) w:SetPoint("TOPLEFT", last, "BOTTOMLEFT", 0, dy or lastDy); last = w; lastDy = -6 end
@@ -205,9 +205,23 @@ local function Build()
 	q:Finish()
 
 	-- Section: Reward tiers
-	local actionNames = NS.TierActionNames()
+	-- Original reward settings are functional. Retained tier controls below are state only.
+	local r = Section(L["Original reward selection"])
+	r:Add(RadioRow(r, "rewardMode", L["Reward choice"], NS.REWARD_MODES,
+		{ fit = L["Best fit"], value = L["Vendor value"], manual = L["Manual"] },
+		L["Best fit compares the armour class you wear at your level and the stats your class wants. Most valuable takes the reward with the highest vendor price."], { labelWidth = 160 }), 20)
+	r:Add(Check(r, "weapons", L["Pick weapons too"]), 26)
+	r:Add(Check(r, "trinkets", L["Pick trinkets too"]), 26)
+	r:Add(Check(r, "fallbackToValue", L["Nothing fits: take the most valuable"]), 26)
+	local qualityNames = {}
+	for _, v in ipairs(NS.QUALITY_CHOICES) do qualityNames[v] = NS.QualityName(v) end
+	r:Add(RadioRow(r, "manualQuality", L["Leave the choice to me from quality"], NS.QUALITY_CHOICES, qualityNames, L["When any reward is of this quality or better, the reward window stays open for you to choose."], { wrap = true }), 40, -10)
+	r:Finish()
+
+	local ui = NS.UIState
 	local shortNames = { auto = L["auto"], recommend = L["recommend"] }
 	local t = Section(L["Reward tiers (first match wins)"])
+	t:Add(Note(t), 36).text:SetText(ui.PlaceholderTip())
 	local tierRows = {
 		{ "1", L["Hard to value (trinket, relic, Use or proc effect, not equipment)"], L["When any reward is a trinket, a relic, has a Use or chance-on-hit effect, or is not equipment at all. Recommend is the safe choice: the addon cannot weigh these."] },
 		{ "2", L["One reward is a clear upgrade"], L["Exactly one wearable reward has a higher item level than what you wear in that slot (by more than the sidegrade band)."] },
@@ -216,22 +230,20 @@ local function Build()
 		{ "5", L["Nothing wearable: most valuable"], L["No reward fits your class's best armour class or weapon skills: take the one worth the most."] },
 	}
 	for i, row in ipairs(tierRows) do
-		t:Add(RadioRow(t, NS.Engine.TIER_SETTING[row[1]], row[1] .. ". " .. row[2], NS.TIER_ACTIONS, shortNames, row[3], { labelWidth = 360 }), 20, i == 1 and -8 or -4)
+		t:Add(RadioRow(t, "tier" .. row[1] .. "Action", ui.PlaceholderLabel(row[1] .. ". " .. row[2]), ui.TIER_ACTIONS, shortNames, ui.PlaceholderTip(row[3]), { wrap = true }), 52, -8)
 	end
-	local qualityNames = {}
-	for _, v in ipairs(NS.QUALITY_CHOICES) do qualityNames[v] = NS.QualityName(v) end
-	t:Add(RadioRow(t, "manualQuality", L["Leave the choice to me from quality"], NS.QUALITY_CHOICES, qualityNames, L["When any reward is of this quality or better, the reward window stays open for you to choose."], { wrap = true }), 40, -10)
-	t:Add(Slider(t, "QuestAutomatorOptionsBand", "ilvlBand", 0, 10, function(v) return string.format(L["Sidegrade band: %d item levels either side of what you wear"], v) end), 44, -10)
+	t:Add(Slider(t, "QuestAutomatorOptionsBand", "ilvlBand", 0, 10, function(v) return ui.PlaceholderLabel(L["Sidegrade band (item levels)"] .. ": " .. v) end), 58, -10)
 	t:Finish()
 
 	-- Section: What counts as wearable / valuable
 	local w = Section(L["Wearable and valuable"])
-	w:Add(RadioRow(w, "weaponProficiency", L["Wearable weapons"], NS.WEAPON_PROFICIENCIES,
+	w:Add(Note(w), 36).text:SetText(ui.PlaceholderTip())
+	w:Add(RadioRow(w, "weaponProficiency", ui.PlaceholderLabel(L["Wearable weapons"]), ui.WEAPON_PROFICIENCIES,
 		{ learnable = L["weapons my class can learn"], usable = L["weapons I have trained"] },
-		L["Which weapons count as wearable: every weapon your class can train at some trainer, or only those you have the skill for right now."], { labelWidth = 160 }), 20, -8)
-	w:Add(RadioRow(w, "valueSource", L["Most valuable means"], NS.VALUE_SOURCES,
+		ui.PlaceholderTip(), { wrap = true }), 40, -8)
+	w:Add(RadioRow(w, "valueSource", ui.PlaceholderLabel(L["Most valuable means"]), ui.VALUE_SOURCES,
 		{ vendor = L["vendor price"], auction = L["auction value"], disenchant = L["disenchant value"] },
-		L["How the value of a reward is measured. Auction and disenchant values need a provider addon; without one the vendor price is used."], { labelWidth = 160 }), 20, -4)
+		ui.PlaceholderTip(), { wrap = true }), 40, -8)
 	local weights = w:Add(Note(w), 28, -10)
 	weights.Update = function(self)
 		local player = NS.Rules.Player()
@@ -246,7 +258,8 @@ local function Build()
 
 	-- Section: Pre-pick and feedback
 	local p = Section(L["Pre-pick and feedback"])
-	p:Add(Check(p, "prePickUI", L["Ask me when I accept a quest"], L["When a quest you accept has a reward the addon would only recommend, show the choices right away so the hand-in can still be automatic."]), 26)
+	p:Add(Note(p), 28).text:SetText(L["Pre-picks override reward recommendations, not automation safeguards."])
+	p:Add(Check(p, "prePickUI", L["Ask me when I accept a quest"], L["Show reward choices on accept. A saved selection is used at hand-in when automation is allowed; turning off this display does not clear saved picks."]), 26)
 	p:Add(Check(p, "prePickUnlocked", L["Unlock and show the pick window (drag it, then untick)"], L["Shows the pick window with sample rewards so you can drag it where you want it. The position is remembered; untick to lock it again."],
 		function(value) if NS.PrePick and NS.PrePick.SetUnlocked then NS.PrePick.SetUnlocked(value) end end), 26, -2, 20)
 	p:Add(Check(p, "announce", L["Chat messages for quests accepted, handed in and rewards chosen"], L["Print a chat line for every quest accepted, handed in and reward chosen."]), 26, -8, -20)

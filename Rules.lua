@@ -1,4 +1,4 @@
--- QuestAutomator: what fits a class. Armour proficiency by level, weapon
+-- Quest Automator: what fits a class. Armour proficiency by level, weapon
 -- proficiency and stat weights for the nine Forever classes, the per-character
 -- stat override, and the player context handed to the reward scorer.
 --
@@ -195,93 +195,6 @@ function Rules.IsTrinket(equipLoc)
 end
 
 --------------------------------------------------------------------------------
--- Equipment slots. INVTYPE_* (C_Item.GetItemInfoInstant's equipLoc) -> the
--- inventory slot IDs the piece could go into (GetInventoryItemLink). Paired
--- slots list both; the upgrade check compares against the weaker one.
---------------------------------------------------------------------------------
-Rules.EQUIP_SLOTS = {
-	INVTYPE_HEAD = { 1 }, INVTYPE_NECK = { 2 }, INVTYPE_SHOULDER = { 3 }, INVTYPE_BODY = { 4 },
-	INVTYPE_CHEST = { 5 }, INVTYPE_ROBE = { 5 }, INVTYPE_WAIST = { 6 }, INVTYPE_LEGS = { 7 },
-	INVTYPE_FEET = { 8 }, INVTYPE_WRIST = { 9 }, INVTYPE_HAND = { 10 },
-	INVTYPE_FINGER = { 11, 12 }, INVTYPE_TRINKET = { 13, 14 }, INVTYPE_CLOAK = { 15 },
-	INVTYPE_WEAPON = { 16, 17 }, INVTYPE_2HWEAPON = { 16 }, INVTYPE_WEAPONMAINHAND = { 16 },
-	INVTYPE_WEAPONOFFHAND = { 17 }, INVTYPE_SHIELD = { 17 }, INVTYPE_HOLDABLE = { 17 },
-	INVTYPE_RANGED = { 18 }, INVTYPE_RANGEDRIGHT = { 18 }, INVTYPE_THROWN = { 18 }, INVTYPE_RELIC = { 18 },
-	INVTYPE_TABARD = { 19 },
-}
-
--- Slots whose contents the engine does not compare (nothing to upgrade, or not gear).
-Rules.UNCOMPARED_SLOTS = { INVTYPE_BAG = true, INVTYPE_AMMO = true, INVTYPE_QUIVER = true, INVTYPE_TABARD = true, INVTYPE_BODY = true }
-
--- Weapon subclass -> the vanilla weapon-skill name as the skill list shows it
--- (enUS; C_Item.GetItemSubClassInfo gives the localized subclass name, which the
--- skill list repeats verbatim for most weapons, so this table is the fallback).
-Rules.WEAPON_SKILL_NAMES = {
-	[W.AXE1H] = "Axes", [W.AXE2H] = "Two-Handed Axes", [W.BOW] = "Bows", [W.GUN] = "Guns",
-	[W.MACE1H] = "Maces", [W.MACE2H] = "Two-Handed Maces", [W.POLEARM] = "Polearms",
-	[W.SWORD1H] = "Swords", [W.SWORD2H] = "Two-Handed Swords", [W.STAFF] = "Staves",
-	[W.FIST] = "Fist Weapons", [W.DAGGER] = "Daggers", [W.THROWN] = "Thrown", [W.CROSSBOW] = "Crossbows", [W.WAND] = "Wands",
-}
-
---------------------------------------------------------------------------------
--- Best-wearable: the only sense of "wearable" the reward engine uses (spec §6.2).
--- Armour: the piece's class is the class's best at this level (mail < 40 then
--- plate for warriors and paladins...), neutral slots always, shields for the shield
--- classes, relics for their class. Lighter armour is NOT wearable here.
--- Weapons: by settings.weaponProficiency - "learnable" (the class can train it:
--- Rules.WEAPONS) or "usable" (the character has the skill now: Client.HasWeaponSkill,
--- falling back to learnable when the client cannot tell).
--- -> true/false, reason string
---------------------------------------------------------------------------------
-function Rules.IsBestWearable(c, player, settings)
-	if c.usable == false then return false, "unusable" end
-	local equipLoc = c.equipLoc or ""
-	if c.classID == Rules.CLASS_ARMOR then
-		local sub = c.subclassID
-		if Rules.NEUTRAL_SLOTS[equipLoc] or sub == A.GENERIC then return true, "neutral" end
-		if sub == A.SHIELD then
-			if Rules.SHIELD_CLASSES[player.class or ""] then return true, "shield" end
-			return false, "noshield"
-		end
-		local relicClass = Rules.RELIC_CLASS[sub]
-		if relicClass then
-			if relicClass == player.class then return true, "relic" end
-			return false, "otherrelic"
-		end
-		if sub == A.CLOTH or sub == A.LEATHER or sub == A.MAIL or sub == A.PLATE then
-			if player.preferredArmor == nil then return false, "unknownclass" end
-			if sub == player.preferredArmor then return true, "bestarmor" end
-			if sub < player.preferredArmor then return false, "lighter" end
-			return false, "heavier"
-		end
-		return false, "otherarmor"
-	end
-	if Rules.IsWeapon(c.classID, c.subclassID) then
-		local proficiency = settings and settings.weaponProficiency or "learnable"
-		local learnable = Rules.WeaponScore(player.class, c.subclassID) > 0
-		if not learnable then return false, "cannotlearn" end
-		if proficiency == "usable" then
-			local has = NS.Client.HasWeaponSkill(c.subclassID)
-			if has == false then return false, "noskill" end
-		end
-		return true, "weapon"
-	end
-	return false, "notgear"
-end
-
--- Hard to value (spec tier 1): a trinket, a relic, anything with a Use / proc /
--- unparsed Equip effect, or not equipment at all.
-function Rules.IsHardToValue(c)
-	if c.classID ~= Rules.CLASS_ARMOR and not Rules.IsWeapon(c.classID, c.subclassID) then return true, "notgear" end
-	if Rules.IsTrinket(c.equipLoc) then return true, "trinket" end
-	if c.classID == Rules.CLASS_ARMOR and Rules.RELIC_CLASS[c.subclassID] then return true, "relic" end
-	if c.hasUseEffect then return true, "use" end
-	if c.hasProcEffect then return true, "proc" end
-	if c.hasUnknownEquip then return true, "equipeffect" end
-	return false
-end
-
---------------------------------------------------------------------------------
 -- Weapon kinds. When both kinds are offered, a hunter wants the ranged weapon
 -- unless Survival leads its talents, the melee classes want the melee weapon,
 -- the casters have no preference. No setting: the talents decide.
@@ -306,18 +219,52 @@ function Rules.PreferredWeaponCategory(class, talents)
 	return nil
 end
 
--- Points spent per talent tree, read through the client adapter (Forever: the
--- retail trait system; Era: C_SpecializationInfo tabs). Survival is the group
--- with skill line 51 when the client reports skill lines, else the third group
--- in display order. survivalDominant: more points there than in any other tree.
+-- Points spent per talent tree of the active combat configuration. Forever runs
+-- vanilla-style trees on the retail trait system: the active spec group's config
+-- (C_SpecializationInfo.GetCombatConfigIDForSpecGroup, as Camelot's
+-- ClassTalentsFrame:SetTab does) has one tree whose three "groups"
+-- (C_Traits.GetGroupDisplayInfoByTreeID) are the trees, and
+-- C_Traits.GetGroupCurrencyInfo reports the points spent in each (the number the
+-- tree headers show). Survival is the group with skill line 51, else the third
+-- group in display order. survivalDominant: more points there than in any other tree.
 function Rules.Talents()
-	local result = NS.Client.TalentGroups()
-	if result.source == "none" or #result.groups == 0 then return result end
+	local result = { groups = {}, source = "none" }
+	local group = NS.SafeNumber(NS.Call("C_SpecializationInfo.GetActiveSpecGroup")) or 1
+	local configID = NS.SafeNumber(NS.Call("C_SpecializationInfo.GetCombatConfigIDForSpecGroup", group))
+		or NS.SafeNumber(NS.Call("C_ClassTalents.GetActiveConfigID"))
+	if not configID then return result end
+	local configInfo = NS.Call("C_Traits.GetConfigInfo", configID)
+	local treeID = type(configInfo) == "table" and type(configInfo.treeIDs) == "table" and NS.SafeNumber(configInfo.treeIDs[1]) or nil
+	if not treeID then return result end
+	local displayInfos = NS.Call("C_Traits.GetGroupDisplayInfoByTreeID", treeID)
+	if type(displayInfos) ~= "table" or #displayInfos == 0 then return result end
+	local groupIDs = {}
+	for _, info in ipairs(displayInfos) do
+		local id = NS.SafeNumber(info.groupID)
+		if id then groupIDs[#groupIDs + 1] = id end
+	end
+	local spentByGroup = {}
+	local currencyInfos = NS.Call("C_Traits.GetGroupCurrencyInfo", configID, groupIDs)
+	for _, groupInfo in ipairs(type(currencyInfos) == "table" and currencyInfos or {}) do
+		local currency = type(groupInfo.currencyInfos) == "table" and groupInfo.currencyInfos[1] or nil
+		local id = NS.SafeNumber(groupInfo.traitNodeGroupID)
+		if id then spentByGroup[id] = currency and NS.SafeNumber(currency.spent) or 0 end
+	end
+	for i, info in ipairs(displayInfos) do
+		result.groups[#result.groups + 1] = {
+			name = NS.SafeString(info.displayName),
+			skillLineID = NS.SafeNumber(info.skillLineID),
+			orderIndex = NS.SafeNumber(info.orderIndex) or i,
+			spent = spentByGroup[NS.SafeNumber(info.groupID) or 0] or 0,
+		}
+	end
+	table.sort(result.groups, function(a, b) return a.orderIndex < b.orderIndex end)
+	result.source = "traits"
 	local survival
 	for _, g in ipairs(result.groups) do
 		if g.skillLineID == Rules.SURVIVAL_SKILL_LINE then survival = g end
 	end
-	survival = survival or result.groups[NS.Client.SURVIVAL_TAB_INDEX]
+	survival = survival or result.groups[3]
 	if survival then
 		local dominant = survival.spent > 0
 		for _, g in ipairs(result.groups) do
