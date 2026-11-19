@@ -21,6 +21,7 @@ L["%d XP"] = "%d 点经验"
 L["quality %d"] = "品质 %d"
 L["Armor"] = "护甲"
 L["damage per second"] = "每秒伤害"
+L["Weapon DPS"] = "武器DPS"
 L["Valid values: %s"] = "可用的值：%s"
 L["The log is empty."] = "日志为空。"
 

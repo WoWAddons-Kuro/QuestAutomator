@@ -313,7 +313,8 @@ end
 --------------------------------------------------------------------------------
 function Rules.StatName(key)
 	if key == "ARMOR" then return _G["RESISTANCE0_NAME"] or _G["ARMOR"] or L["Armor"] end
-	if key == "DAMAGE_PER_SECOND" then return _G["ITEM_MOD_DAMAGE_PER_SECOND_SHORT"] or L["damage per second"] end
+	-- Our own short label: the client's ITEM_MOD_DAMAGE_PER_SECOND_SHORT is "Damage Per Second" and clips in the pick grid.
+	if key == "DAMAGE_PER_SECOND" then return L["Weapon DPS"] end
 	local name = _G["ITEM_MOD_" .. key .. "_SHORT"]
 	if type(name) == "string" and name ~= "" then return name end
 	return key:sub(1, 1) .. key:sub(2):lower():gsub("_", " ")

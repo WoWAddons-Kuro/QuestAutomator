@@ -275,6 +275,14 @@ function Rewards.Gather(numChoices, source)
 				if not stats then
 					stats = Rewards.StatsFromTooltipData(source.Tooltip(i))
 					c.statsSource = stats and "tooltip" or "none"
+				else
+					-- GetItemStats never reports the tooltip-only pseudo-stats (weapon DPS,
+					-- armour value) - they are not ITEM_MOD_* entries. Read those from the
+					-- tooltip even when the API answered, else every weapon scores 0 DPS.
+					local fromTooltip = Rewards.StatsFromTooltipData(source.Tooltip(i)) or {}
+					for _, key in ipairs(Rules.EXTRA_KEYS) do
+						if stats[key] == nil and fromTooltip[key] then stats[key] = fromTooltip[key] end
+					end
 				end
 				c.stats = stats or {}
 			else
