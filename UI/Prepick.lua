@@ -20,10 +20,14 @@ PrePick.LIST_LINE_HEIGHT = 16  -- one line per pending quest in the quest list
 PrePick.OPEN_DELAY = 0.3   -- seconds after QUEST_ACCEPTED before the log is read
 PrePick.MAX_LOAD_TRIES = 6
 PrePick.RETRY_DELAY = 0.5
--- Inline marker icons after an item name (and in the legend): the engine's
--- recommendation (gold star) and the player's stored pre-pick (green check).
-PrePick.ICON_RECOMMENDED = "|TInterface\\Buttons\\UI-GroupLoot-Coin-Up:0|t"
-PrePick.ICON_PICKED = "|TInterface\\RaidFrame\\ReadyCheck-Ready:0|t"
+-- Marker badges on the item icon's corners (and inline in the legend): the engine's
+-- recommendation (gold coin, upper-left) and the player's stored pre-pick (green
+-- check, upper-right).
+PrePick.TEXTURE_RECOMMENDED = "Interface\\Buttons\\UI-GroupLoot-Coin-Up"
+PrePick.TEXTURE_PICKED = "Interface\\RaidFrame\\ReadyCheck-Ready"
+PrePick.ICON_RECOMMENDED = "|T" .. PrePick.TEXTURE_RECOMMENDED .. ":0|t"
+PrePick.ICON_PICKED = "|T" .. PrePick.TEXTURE_PICKED .. ":0|t"
+PrePick.BADGE_SIZE = 16
 
 local frame, rows, questLines = nil, {}, {}
 local state = { questID = nil, choices = nil, decision = nil, attempt = 0 }
@@ -244,6 +248,20 @@ local function BuildRow(index)
 	row.Icon:SetPoint("LEFT", row, "LEFT", 0, 0)
 	row.Icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
 
+	-- Marker badges on the item icon: recommended (gold coin) upper-left, your pick
+	-- (green check) upper-right. Textures, not inline text, so a long name cannot
+	-- push them out of view.
+	row.Recommended = row:CreateTexture(nil, "OVERLAY", nil, 2)
+	row.Recommended:SetSize(PrePick.BADGE_SIZE, PrePick.BADGE_SIZE)
+	row.Recommended:SetPoint("TOPLEFT", row.Icon, "TOPLEFT", -3, 3)
+	row.Recommended:SetTexture(PrePick.TEXTURE_RECOMMENDED)
+	row.Recommended:Hide()
+	row.Picked = row:CreateTexture(nil, "OVERLAY", nil, 2)
+	row.Picked:SetSize(PrePick.BADGE_SIZE, PrePick.BADGE_SIZE)
+	row.Picked:SetPoint("TOPRIGHT", row.Icon, "TOPRIGHT", 3, 3)
+	row.Picked:SetTexture(PrePick.TEXTURE_PICKED)
+	row.Picked:Hide()
+
 	-- Suggested / picked marker: a yellow glow border around the whole card.
 	row.Border = CreateFrame("Frame", nil, row, BackdropTemplateMixin and "BackdropTemplate" or nil)
 	row.Border:SetPoint("TOPLEFT", row, "TOPLEFT", -4, 3)
@@ -261,18 +279,18 @@ local function BuildRow(index)
 	row.Name:SetHeight(14)
 	row.Name:SetJustifyH("LEFT")
 	row.Name:SetWordWrap(false)
-	-- Name line, fully justified: name (left) | vendor value (centre) | ilvl (right),
-	-- the latter two in the small font. The three cells split the width left of
-	-- the icon in fixed thirds-ish so the columns line up on every row.
+	-- Name line: name (left) | vendor value | ilvl (right), the latter two in the
+	-- small font, each a fixed sideW wide and packed against the right edge so the
+	-- name gets everything left over and the columns line up on every row.
 	local nameLeft = PrePick.ICON_SIZE + 8
 	local lineW = PrePick.WIDTH - 40 - nameLeft - 4
-	local sideW = math.floor(lineW * 0.28)
-	row.Name:SetWidth(lineW - 2 * sideW)
+	local sideW = math.floor(lineW * 0.20)
+	row.Name:SetWidth(lineW - 2 * sideW - 4)
 	row.Value = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	row.Value:SetPoint("TOP", row, "TOP", 0, -1)
-	row.Value:SetPoint("LEFT", row, "LEFT", nameLeft + (lineW - sideW) / 2, 0)
+	row.Value:SetPoint("RIGHT", row, "RIGHT", -4 - sideW, 0)
 	row.Value:SetSize(sideW, 12)
-	row.Value:SetJustifyH("CENTER")
+	row.Value:SetJustifyH("RIGHT")
 	row.Level = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	row.Level:SetPoint("TOP", row, "TOP", 0, -1)
 	row.Level:SetPoint("RIGHT", row, "RIGHT", -4, 0)
@@ -549,13 +567,14 @@ function PrePick.Render()
 			local hex = colors and colors.hex or "|cffffffff"
 			local isPicked = picked ~= nil and c.itemID == picked
 			local isSuggested = decision and decision.index == c.index
-			-- Name line: [name + your-pick check] left, vendor value centre, [recommended
-			-- coin] ilvl right: the coin sits beside the ilvl so long names do not push it off.
-			row.Name:SetText(hex .. (c.name or "?") .. "|r" .. (isPicked and (" " .. PrePick.ICON_PICKED) or ""))
+			-- Name line: name left, vendor value right of centre, ilvl right. The
+			-- recommended / your-pick badges sit on the item icon's corners.
+			row.Name:SetText(hex .. (c.name or "?") .. "|r")
+			row.Recommended:SetShown(isSuggested and true or false)
+			row.Picked:SetShown(isPicked)
 			row.Value:SetText(c.loaded == false and "" or NS.FormatMoney((c.sellPrice or 0) * (c.count or 1)))
 			local wornLevel = c.worn and c.worn.itemLevel or nil
-			row.Level:SetText(string.format("%s|cffb0b0b0%s|r %s%s", isSuggested and (PrePick.ICON_RECOMMENDED .. " ") or "",
-				L["ilvl"], FormatValue(c.itemLevel or 0), FormatDelta(wornLevel and ((c.itemLevel or 0) - wornLevel) or nil)))
+			row.Level:SetText(string.format("|cffb0b0b0%s|r %s%s", L["ilvl"], FormatValue(c.itemLevel or 0), FormatDelta(wornLevel and ((c.itemLevel or 0) - wornLevel) or nil)))
 			-- Stat grid when the item is wearable (there is something to compare), as
 			-- many lines as the stats need; the engine's reason line otherwise. The card
 			-- grows to fit; an untrained weapon gets a centred warning under the grid.
