@@ -323,17 +323,14 @@ local function Build()
 	w:Add(RadioRow(w, "valueSource", ui.PlaceholderLabel(L["Most valuable means"]), ui.VALUE_SOURCES,
 		{ vendor = L["vendor price"], auction = L["auction value"], disenchant = L["disenchant value"] },
 		ui.PlaceholderTip(), { wrap = true }), 40, -8)
-	local weights = w:Add(Note(w), 28, -10)
-	weights.Update = function(self)
-		local player = NS.Rules.Player()
-		local ordered = {}
-		for key, weight in pairs(player.weights) do ordered[#ordered + 1] = { key = key, weight = weight } end
-		table.sort(ordered, function(a, b) if a.weight ~= b.weight then return a.weight > b.weight end return a.key < b.key end)
-		local bits = {}
-		for i = 1, math.min(8, #ordered) do bits[#bits + 1] = string.format("%s %.2f", NS.Rules.StatName(ordered[i].key), ordered[i].weight) end
-		self.text:SetText(string.format(L["Tie-break stat weights for %s: %s"], tostring(player.class), table.concat(bits, ", ")))
-	end
 	w:Finish()
+
+	-- Section: Stat values for the current class (UI/StatWeights.lua)
+	if NS.StatWeights then
+		local sw = Section(L["Stat values"])
+		sw:Add(NS.StatWeights.Build(sw, Changed), 40)
+		sw:Finish()
+	end
 
 	-- Section: Pre-pick and feedback
 	local p = Section(L["Pre-pick and feedback"])

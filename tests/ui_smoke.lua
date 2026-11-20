@@ -60,7 +60,7 @@ function methods:CreateFontString() return region(self) end
 function methods:AddLine(text) self.lines = self.lines or {}; self.lines[#self.lines + 1] = text end
 function methods:AddDoubleLine(a, b) self:AddLine(a .. " " .. b) end
 function methods:SetOwner() self.lines = {} end
-for _, method in ipairs({"RegisterEvent", "SetAllPoints", "SetBackdrop", "SetBackdropColor", "SetBackdropBorderColor", "SetFrameStrata", "SetFrameLevel", "SetMovable", "EnableMouse", "RegisterForDrag", "SetClampedToScreen", "SetJustifyH", "SetWordWrap", "SetTextColor", "RegisterForClicks", "SetTexCoord", "SetTexture", "SetColorTexture", "SetMinMaxValues", "SetValueStep", "SetObeyStepOnDrag", "EnableMouseWheel", "SetScrollChild", "StartMoving", "StopMovingOrSizing", "SetHighlightTexture", "SetDesaturated", "SetVertexColor", "SetHyperlink", "SetItemByID", "SetBlendMode"}) do methods[method] = noop end
+for _, method in ipairs({"RegisterEvent", "SetAllPoints", "SetBackdrop", "SetBackdropColor", "SetBackdropBorderColor", "SetFrameStrata", "SetFrameLevel", "SetMovable", "EnableMouse", "RegisterForDrag", "SetClampedToScreen", "SetJustifyH", "SetWordWrap", "SetTextColor", "RegisterForClicks", "SetTexCoord", "SetTexture", "SetColorTexture", "SetMinMaxValues", "SetValueStep", "SetObeyStepOnDrag", "EnableMouseWheel", "SetScrollChild", "StartMoving", "StopMovingOrSizing", "SetHighlightTexture", "SetDesaturated", "SetVertexColor", "SetHyperlink", "SetItemByID", "SetBlendMode", "SetAutoFocus", "SetNumeric", "SetMaxLetters", "ClearFocus"}) do methods[method] = noop end
 function CreateFrame(kind, name, parent, template)
 	local f = region(parent, name)
 	frames[#frames + 1] = f

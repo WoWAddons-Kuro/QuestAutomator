@@ -329,3 +329,10 @@ L["needs weapon training"] = "needs weapon training"
 L["%s over what you wear"] = "%s over what you wear"
 L["no reward beats what you wear"] = "no reward beats what you wear"
 L["no reward has stats your class wants"] = "no reward has stats your class wants"
+
+-- Stat values editor (UI/StatWeights.lua)
+L["Stat values"] = "Stat values"
+L["Stat values for your %s. One point of each stat is worth this much; a reward's value is the sum, compared with what you wear in the same slot. Changed values are shown in gold."] = "Stat values for your %s. One point of each stat is worth this much; a reward's value is the sum, compared with what you wear in the same slot. Changed values are shown in gold."
+L["How much one point of this stat is worth to your class. 0 = ignored. Clear the box or enter the default to go back to it."] = "How much one point of this stat is worth to your class. 0 = ignored. Clear the box or enter the default to go back to it."
+L["default %s"] = "default %s"
+L["Reset to class defaults"] = "Reset to class defaults"

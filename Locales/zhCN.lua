@@ -342,3 +342,10 @@ L["needs weapon training"] = "需要学习武器技能"
 L["%s over what you wear"] = "比当前装备高 %s"
 L["no reward beats what you wear"] = "没有奖励优于你当前的装备"
 L["no reward has stats your class wants"] = "没有奖励带有你职业需要的属性"
+
+-- Stat values editor (UI/StatWeights.lua)
+L["Stat values"] = "属性价值"
+L["Stat values for your %s. One point of each stat is worth this much; a reward's value is the sum, compared with what you wear in the same slot. Changed values are shown in gold."] = "你的%s的属性价值。每点属性值这么多；奖励的价值是总和，并与你同部位的装备比较。已修改的值以金色显示。"
+L["How much one point of this stat is worth to your class. 0 = ignored. Clear the box or enter the default to go back to it."] = "每点该属性对你职业的价值。0 = 忽略。清空或输入默认值即可恢复默认。"
+L["default %s"] = "默认 %s"
+L["Reset to class defaults"] = "恢复职业默认值"

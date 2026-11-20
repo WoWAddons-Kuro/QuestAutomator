@@ -33,5 +33,6 @@ UI\State.lua
 UI\PrepickData.lua
 UI\Prepick.lua
 UI\SettingsLayout.lua
+UI\StatWeights.lua
 Settings.lua
 Minimap.lua

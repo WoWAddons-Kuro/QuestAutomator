@@ -102,6 +102,59 @@ Rules.WEIGHTS = {
 -- Weapon damage per second counts for every class that can use the weapon.
 Rules.DPS_WEIGHT = 0.6
 
+-- The classes and stats shown in the stat-weight grid (Settings > Stat weights),
+-- in display order. CLASSES also fixes row order; EDITABLE_STATS the columns, each
+-- with the short header the grid uses.
+Rules.CLASSES = { "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "SHAMAN", "MAGE", "WARLOCK", "DRUID" }
+Rules.EDITABLE_STATS = {
+	{ key = "STRENGTH", short = "Str" }, { key = "AGILITY", short = "Agi" }, { key = "STAMINA", short = "Sta" },
+	{ key = "INTELLECT", short = "Int" }, { key = "SPIRIT", short = "Spi" },
+	{ key = "ATTACK_POWER", short = "AP" }, { key = "RANGED_ATTACK_POWER", short = "RAP" }, { key = "FERAL_ATTACK_POWER", short = "FAP" },
+	{ key = "SPELL_POWER", short = "SP" }, { key = "SPELL_DAMAGE_DONE", short = "SpDmg" }, { key = "SPELL_HEALING_DONE", short = "Heal" },
+	{ key = "MANA_REGENERATION", short = "MP5" }, { key = "HEALTH_REGENERATION", short = "HP5" },
+	{ key = "HIT_RATING", short = "Hit" }, { key = "CRIT_RATING", short = "Crit" }, { key = "HASTE_RATING", short = "Haste" },
+	{ key = "DEFENSE_SKILL_RATING", short = "Def" }, { key = "DODGE_RATING", short = "Dodge" }, { key = "PARRY_RATING", short = "Parry" },
+	{ key = "BLOCK_RATING", short = "Block" }, { key = "BLOCK_VALUE", short = "BlkV" },
+	{ key = "ARMOR", short = "Armor" }, { key = "MANA", short = "Mana" }, { key = "HEALTH", short = "HP" },
+}
+
+-- User overrides of the class profiles live in NS.db.statWeights[class][key] (account
+-- wide). nil = default; a number (0 allowed) replaces the default for that cell.
+function Rules.DefaultWeight(class, key)
+	local profile = Rules.WEIGHTS[class or ""]
+	return profile and profile[key] or 0
+end
+
+function Rules.UserWeight(class, key)
+	local overrides = NS.db and NS.db.statWeights
+	local row = overrides and overrides[class]
+	local v = row and row[key]
+	if type(v) == "number" then return v end
+	return nil
+end
+
+function Rules.EffectiveWeight(class, key)
+	local v = Rules.UserWeight(class, key)
+	if v ~= nil then return v end
+	return Rules.DefaultWeight(class, key)
+end
+
+-- Sets or clears (value == nil) one override. Values equal to the default are stored
+-- as nil so an untouched grid stays empty in the saved variables.
+function Rules.SetUserWeight(class, key, value)
+	if not NS.db then return end
+	NS.db.statWeights = NS.db.statWeights or {}
+	local row = NS.db.statWeights[class] or {}
+	if value == nil or value == Rules.DefaultWeight(class, key) then value = nil end
+	row[key] = value
+	if next(row) then NS.db.statWeights[class] = row else NS.db.statWeights[class] = nil end
+end
+
+function Rules.ResetUserWeights(class)
+	if not NS.db or not NS.db.statWeights then return end
+	if class then NS.db.statWeights[class] = nil else NS.db.statWeights = {} end
+end
+
 -- Weights of a `/qam stats` override, most important first; stats not listed count nothing.
 Rules.OVERRIDE_WEIGHTS = { 1.0, 0.75, 0.55, 0.4, 0.3, 0.25, 0.2, 0.15 }
 
@@ -322,7 +375,8 @@ function Rules.Talents()
 end
 
 
--- Stat weights for the player: the character's override when set, else the class profile.
+-- Stat weights for the player: the character's /qam stats list when set, else the
+-- class profile with the account's grid overrides applied.
 function Rules.Weights(class, override)
 	if type(override) == "table" and #override > 0 then
 		local weights = {}
@@ -331,9 +385,17 @@ function Rules.Weights(class, override)
 		end
 		return weights, "override"
 	end
-	local weights = Rules.WEIGHTS[class or ""]
-	if weights then return weights, "class" end
-	return { STAMINA = 0.5 }, "unknown"
+	local profile = Rules.WEIGHTS[class or ""]
+	if not profile then return { STAMINA = 0.5 }, "unknown" end
+	local weights, source = {}, "class"
+	for key, value in pairs(profile) do weights[key] = value end
+	local user = NS.db and NS.db.statWeights and NS.db.statWeights[class]
+	if user then
+		for key, value in pairs(user) do
+			if type(value) == "number" then weights[key] = value > 0 and value or nil; source = "grid" end
+		end
+	end
+	return weights, source
 end
 
 function Rules.Player()
