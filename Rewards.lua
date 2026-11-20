@@ -270,16 +270,17 @@ function Rewards.Gather(numChoices, source)
 				else
 					c.loaded = false
 				end
+				local tooltip = source.Tooltip(i)
 				local stats = Rewards.StatsFromAPI(c.link)
 				c.statsSource = stats and "api" or nil
 				if not stats then
-					stats = Rewards.StatsFromTooltipData(source.Tooltip(i))
+					stats = Rewards.StatsFromTooltipData(tooltip)
 					c.statsSource = stats and "tooltip" or "none"
 				else
 					-- GetItemStats never reports the tooltip-only pseudo-stats (weapon DPS,
 					-- armour value) - they are not ITEM_MOD_* entries. Read those from the
 					-- tooltip even when the API answered, else every weapon scores 0 DPS.
-					local fromTooltip = Rewards.StatsFromTooltipData(source.Tooltip(i)) or {}
+					local fromTooltip = Rewards.StatsFromTooltipData(tooltip) or {}
 					for _, key in ipairs(Rules.EXTRA_KEYS) do
 						if stats[key] == nil and fromTooltip[key] then stats[key] = fromTooltip[key] end
 					end
@@ -297,10 +298,16 @@ end
 --------------------------------------------------------------------------------
 -- Scoring.
 --------------------------------------------------------------------------------
-function Rewards.FitScore(c, player)
-	if c.usable == false then return { score = 0, why = "unusable" } end
+-- Weapons: the class table says whether the class can ever learn it (else
+-- "cannotwear"); the character's skill lines (Rules.HasWeaponSkill) say whether it
+-- is trained right now. An untrained-but-learnable weapon is still scored
+-- (settings.weaponProficiency == "learnable", the default) or excluded ("usable"),
+-- and carries fit.untrained for the UI. isUsable=false is treated the same way.
+function Rewards.FitScore(c, player, settings)
 	local typeScore, typeName
+	local untrained = false
 	if c.classID == Rules.CLASS_ARMOR then
+		if c.usable == false then return { score = 0, why = "unusable" } end
 		typeScore = Rules.ArmorScore(player.class, player.level, c.subclassID, c.equipLoc)
 		if not (Rules.NEUTRAL_SLOTS[c.equipLoc or ""] or c.subclassID == Rules.ARMOR.GENERIC) then
 			typeName = Rules.ArmorName(c.subclassID)
@@ -308,6 +315,13 @@ function Rewards.FitScore(c, player)
 	elseif Rules.IsWeapon(c.classID, c.subclassID) then
 		typeScore = Rules.WeaponScore(player.class, c.subclassID)
 		typeName = Rules.WeaponName(c.subclassID)
+		local trained = Rules.HasWeaponSkill(c.subclassID)
+		if typeScore > 0 and (c.usable == false or trained == false) then
+			untrained = true
+			if settings and settings.weaponProficiency == "usable" then
+				return { score = 0, why = "untrained", typeScore = typeScore, typeName = typeName, untrained = true }
+			end
+		end
 	else
 		return { score = 0, why = "notgear" }
 	end
@@ -325,12 +339,76 @@ function Rewards.FitScore(c, player)
 		if a.value ~= b.value then return a.value > b.value end
 		return a.key < b.key
 	end)
-	return { score = typeScore * (1 + statScore), typeScore = typeScore, statScore = statScore, parts = parts, typeName = typeName }
+	return { score = typeScore * (1 + statScore), typeScore = typeScore, statScore = statScore, parts = parts, typeName = typeName, untrained = untrained or nil }
+end
+
+--------------------------------------------------------------------------------
+-- Stat value: the weighted sum of an item's stats for the player's class, in
+-- "stat points" (Rules.WEIGHTS). Weapons add DPS. A stat the class has no weight
+-- for counts nothing, so cloth boots with spell damage are worth 0 to a hunter.
+--------------------------------------------------------------------------------
+function Rewards.StatValue(stats, player, isWeapon)
+	local total = 0
+	for key, amount in pairs(stats or {}) do
+		local weight = player.weights[key] or 0
+		if key == "DAMAGE_PER_SECOND" and isWeapon then weight = Rules.DPS_WEIGHT end
+		if weight > 0 and amount then total = total + weight * amount end
+	end
+	return total
+end
+
+-- Equipment slots for each INVTYPE; paired slots (rings, trinkets) compare with the
+-- weaker of the two. One-hand weapons compare with the main hand.
+Rewards.SLOTS = {
+	INVTYPE_HEAD = {1}, INVTYPE_NECK = {2}, INVTYPE_SHOULDER = {3},
+	INVTYPE_CHEST = {5}, INVTYPE_ROBE = {5}, INVTYPE_WAIST = {6},
+	INVTYPE_LEGS = {7}, INVTYPE_FEET = {8}, INVTYPE_WRIST = {9}, INVTYPE_HAND = {10},
+	INVTYPE_FINGER = {11, 12}, INVTYPE_TRINKET = {13, 14}, INVTYPE_CLOAK = {15},
+	INVTYPE_WEAPON = {16}, INVTYPE_WEAPONMAINHAND = {16}, INVTYPE_2HWEAPON = {16},
+	INVTYPE_WEAPONOFFHAND = {17}, INVTYPE_HOLDABLE = {17}, INVTYPE_SHIELD = {17},
+	INVTYPE_RANGED = {18}, INVTYPE_RANGEDRIGHT = {18}, INVTYPE_THROWN = {18}, INVTYPE_RELIC = {18},
+}
+
+-- Stats of a worn item: C_Item.GetItemStats, else the tooltip.
+function Rewards.WornItemStats(link)
+	if not link then return {} end
+	local stats = Rewards.StatsFromAPI(link)
+	local fromTooltip = Rewards.StatsFromTooltipData(NS.Call("C_TooltipInfo.GetHyperlink", link)) or {}
+	if not stats then return fromTooltip end
+	for _, key in ipairs(Rules.EXTRA_KEYS) do
+		if stats[key] == nil and fromTooltip[key] then stats[key] = fromTooltip[key] end
+	end
+	return stats
+end
+
+-- The item worn where `equipLoc` goes: { link, itemLevel, slotID, value, stats, empty }.
+-- nil when the slot is unknown or the worn item's data has not loaded (unknown is
+-- not an empty slot), or when the inventory cannot be read at all. An empty slot
+-- is { empty = true, value = 0 }.
+function Rewards.WornItem(equipLoc, player)
+	local okInv, hasInv = pcall(function() return type(GetInventoryItemLink) == "function" end)
+	if not okInv or not hasInv then return nil end
+	local worn
+	for _, slotID in ipairs(Rewards.SLOTS[equipLoc or ""] or {}) do
+		local link = NS.SafeString(NS.Call("GetInventoryItemLink", "player", slotID))
+		local entry = { slotID = slotID, itemLevel = 0, value = 0, stats = {}, empty = link == nil }
+		if link then
+			local _, _, _, level = NS.Call("C_Item.GetItemInfo", link)
+			if type(level) ~= "number" then return nil end
+			local _, _, _, _, _, classID, subclassID = NS.Call("C_Item.GetItemInfoInstant", link)
+			entry.link, entry.itemLevel = link, level
+			entry.stats = Rewards.WornItemStats(link)
+			entry.value = player and Rewards.StatValue(entry.stats, player, Rules.IsWeapon(NS.SafeNumber(classID), NS.SafeNumber(subclassID))) or 0
+		end
+		if not worn or entry.value < worn.value then worn = entry end
+	end
+	return worn
 end
 
 local function Value(c)
 	return (c.sellPrice or 0) * (c.count or 1)
 end
+Rewards.VendorValue = Value
 
 -- a beats b: fit score, then vendor value, then quality, then item level, then the earlier slot.
 function Rewards.Better(a, b)
@@ -426,7 +504,29 @@ function Rewards.Evaluate(choices, settings, player)
 	if settings.rewardMode == "value" then return Rewards.ByValue(pool, "value") end
 
 	for _, c in ipairs(pool) do
-		c.fit = Rewards.FitScore(c, player)
+		c.fit = Rewards.FitScore(c, player, settings)
+		-- Stat value vs the worn item. A wearable reward worth no more than what the
+		-- character already wears in that slot is not an upgrade: it keeps its
+		-- wearability (for the weapon/trinket guards) but is treated as vendor
+		-- value only, so zero-stat boots cannot beat a real upgrade.
+		if c.fit.score > 0 then
+			local isWeapon = Rules.IsWeapon(c.classID, c.subclassID)
+			c.statValue = Rewards.StatValue(c.stats, player, isWeapon)
+			c.worn = Rewards.WornItem(c.equipLoc, player)
+			if c.worn then
+				c.wornValue = c.worn.value
+				c.statGain = c.statValue - c.worn.value
+			end
+			c.upgrade = c.statValue > 0 and (c.worn == nil or c.statGain > 0)
+			if not c.upgrade then
+				c.fit.sidelined = true
+				c.fit.why = c.statValue > 0 and "notupgrade" or "nostats"
+				c.fit.score = 0
+			else
+				-- Rank upgrades by how much they add; typeScore keeps lighter armour behind.
+				c.fit.score = c.fit.typeScore * (1 + (c.statGain or c.statValue))
+			end
+		end
 	end
 
 	-- Weapon kind. The best weapon of the kind the class wants (ranged for a hunter, melee
@@ -498,6 +598,10 @@ function Rewards.Describe(decision)
 			local p = c.fit.parts[i]
 			bits[#bits + 1] = FormatAmount(p.amount) .. " " .. Rules.StatName(p.key)
 		end
+		if c.statGain and c.worn and not c.worn.empty then
+			bits[#bits + 1] = format(L["%s over what you wear"], FormatAmount(c.statGain))
+		end
+		if c.fit and c.fit.untrained then bits[#bits + 1] = L["needs weapon training"] end
 		if #bits == 0 then bits[1] = L["usable by your class"] end
 		return format(L["best fit: %s"], table.concat(bits, ", "))
 	elseif decision.reason == "fallback" then
@@ -514,6 +618,8 @@ function Rewards.ReasonText(reason, decision)
 	if reason == "weapon" then return L["a weapon is offered"] end
 	if reason == "trinket" then return L["a trinket is offered"] end
 	if reason == "nofit" then return L["none of the rewards fits your class"] end
+	if reason == "notupgrade" then return L["no reward beats what you wear"] end
+	if reason == "nostats" then return L["no reward has stats your class wants"] end
 	if reason == "novalue" then return L["the rewards have no vendor value"] end
 	if reason == "currency" then return L["only currencies are offered"] end
 	if reason == "pending" then return L["the item data did not load in time"] end

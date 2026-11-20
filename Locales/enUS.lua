@@ -269,6 +269,9 @@ L["Chat messages for quests accepted, handed in and rewards chosen"] = "Chat mes
 L["Sample quest"] = "Sample quest"
 L["Preview: drag me into place, then untick the setting to lock."] = "Preview: drag me into place, then untick the setting to lock."
 L["ilevel"] = "ilevel"
+L["ilvl"] = "ilvl"
+L["recommended"] = "recommended"
+L["your pick"] = "your pick"
 
 -- Pending quest list (pick window + minimap tooltip)
 L["(auto)"] = "(auto)"
@@ -309,3 +312,20 @@ L["Uses original quest automation. Valid pre-picks override automatic reward rec
 -- Settings layout and product-facing headings.
 L["Reward selection"] = "Reward selection"
 L["Automatically accepts and turns in quests. Pre-pick rewards or use automatic selection. Settings marked Not implemented do not affect automation."] = "Automatically accepts and turns in quests. Pre-pick rewards or use automatic selection. Settings marked Not implemented do not affect automation."
+
+-- Notice on a gossip/greeting panel left open on purpose (Notice.lua)
+L["%s: %s"] = "%s: %s"
+L[", "] = ", "
+L["a low-level quest"] = "a low-level quest"
+L["%d low-level quests"] = "%d low-level quests"
+L["a repeatable quest"] = "a repeatable quest"
+L["%d repeatable quests"] = "%d repeatable quests"
+L["an ignored quest"] = "an ignored quest"
+L["%d ignored quests"] = "%d ignored quests"
+
+-- Untrained weapon (class can learn it, skill not trained yet)
+L["needs weapon training"] = "needs weapon training"
+-- Stat value vs the worn item
+L["%s over what you wear"] = "%s over what you wear"
+L["no reward beats what you wear"] = "no reward beats what you wear"
+L["no reward has stats your class wants"] = "no reward has stats your class wants"

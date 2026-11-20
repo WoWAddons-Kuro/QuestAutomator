@@ -317,9 +317,9 @@ local function Build()
 	-- Section: What counts as wearable / valuable
 	local w = Section(L["Wearable and valuable"])
 	w:Add(Note(w), 36).text:SetText(ui.PlaceholderTip())
-	w:Add(RadioRow(w, "weaponProficiency", ui.PlaceholderLabel(L["Wearable weapons"]), ui.WEAPON_PROFICIENCIES,
+	w:Add(RadioRow(w, "weaponProficiency", L["Wearable weapons"], ui.WEAPON_PROFICIENCIES,
 		{ learnable = L["weapons my class can learn"], usable = L["weapons I have trained"] },
-		ui.PlaceholderTip(), { wrap = true }), 40, -8)
+		L["Which weapons count as wearable: every weapon your class can train at some trainer, or only those you have the skill for right now."], { wrap = true }), 40, -8)
 	w:Add(RadioRow(w, "valueSource", ui.PlaceholderLabel(L["Most valuable means"]), ui.VALUE_SOURCES,
 		{ vendor = L["vendor price"], auction = L["auction value"], disenchant = L["disenchant value"] },
 		ui.PlaceholderTip(), { wrap = true }), 40, -8)

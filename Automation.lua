@@ -286,6 +286,7 @@ function Auto.ActGossip()
 	end
 	if s.accept then
 		local available = NS.Call("C_GossipInfo.GetAvailableQuests")
+		local skipped = {}
 		for _, raw in ipairs(type(available) == "table" and available or {}) do
 			local q = Client.GossipQuestInfo(raw)
 			local questID = q.questID
@@ -304,8 +305,43 @@ function Auto.ActGossip()
 			end
 			NS.Log("skip", "gossip: available %s (%s): %s [trivial=%s rep=%s freq=%s]", tostring(q.title), tostring(questID),
 				tostring(reason), tostring(q.isTrivial), tostring(q.isRepeatable), q.frequency)
+			skipped[reason] = (skipped[reason] or 0) + 1
+		end
+		Auto.ShowLeftOpenNotice("gossip", skipped)
+	end
+end
+
+-- The panel stays open with quests on it that the settings exclude: say so on
+-- the panel itself, so a dialog that "did not close" reads as a decision, not a
+-- fault. `skipped` is reason -> count over the available quests the automation
+-- did not take; only the setting-driven reasons are worth a line (a quest the
+-- player is already on is nothing to explain).
+Auto.NOTICE_REASONS = {
+	{ key = "trivial", one = "a low-level quest", many = "%d low-level quests" },
+	{ key = "repeatable", one = "a repeatable quest", many = "%d repeatable quests" },
+	{ key = "ignored", one = "an ignored quest", many = "%d ignored quests" },
+}
+
+-- "Quest Automator: a low-level quest, 2 repeatable quests"; nil when nothing to say.
+function Auto.LeftOpenNoticeText(skipped)
+	if type(skipped) ~= "table" then return nil end
+	local bits = {}
+	for _, entry in ipairs(Auto.NOTICE_REASONS) do
+		local n = skipped[entry.key] or 0
+		if n == 1 then
+			bits[#bits + 1] = L[entry.one]
+		elseif n > 1 then
+			bits[#bits + 1] = format(L[entry.many], n)
 		end
 	end
+	if #bits == 0 then return nil end
+	return format(L["%s: %s"], L["Quest Automator"], table.concat(bits, L[", "]))
+end
+
+function Auto.ShowLeftOpenNotice(stage, skipped)
+	local text = Auto.LeftOpenNoticeText(skipped)
+	if not text or not NS.Notice then return end
+	NS.Notice.Show(stage, text)
 end
 
 function Auto.OnGossipClosed(interactionIsContinuing)
@@ -351,6 +387,7 @@ function Auto.ActGreeting()
 		local numAvailable = NS.SafeNumber(NS.Call("GetNumAvailableQuests")) or 0
 		NS.Log("info", "greeting: %d active, %d available (turnIn %s, accept %s)",
 			NS.SafeNumber(NS.Call("GetNumActiveQuests")) or 0, numAvailable, tostring(s.turnIn), tostring(s.accept))
+		local skipped = {}
 		for i = 1, numAvailable do
 			local q = Client.AvailableQuestInfo(i)  -- questID is nil on Era
 			local questID = q.questID
@@ -371,7 +408,9 @@ function Auto.ActGreeting()
 			end
 			NS.Log("skip", "greeting: available %d %s (%s): %s [trivial=%s rep=%s freq=%s raw=%s]", i, tostring(title), tostring(questID),
 				tostring(reason), tostring(q.isTrivial), tostring(q.isRepeatable), q.frequency, tostring(q.rawFrequency))
+			skipped[reason] = (skipped[reason] or 0) + 1
 		end
+		Auto.ShowLeftOpenNotice("greeting", skipped)
 	end
 end
 

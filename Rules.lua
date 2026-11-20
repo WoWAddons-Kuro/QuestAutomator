@@ -73,28 +73,30 @@ Rules.STAT_KEYS = {
 -- Pseudo-stats read from the tooltip, not ITEM_MOD_ strings.
 Rules.EXTRA_KEYS = { "ARMOR", "DAMAGE_PER_SECOND" }
 
+-- Stat point values per class: one point of the stat is worth this much. A reward's
+-- value is the weighted sum of its stats (Rewards.StatValue) and is compared with the
+-- value of the item worn in the same slot; a stat not listed is worth nothing to the
+-- class (spell damage on a hunter). Primary stat ~2, secondary ~1, flavour 0.1-0.3.
 Rules.WEIGHTS = {
-	WARRIOR = { STRENGTH = 1.0, STAMINA = 0.8, AGILITY = 0.5, ATTACK_POWER = 0.45, HIT_RATING = 0.8, CRIT_RATING = 0.8,
-		DEFENSE_SKILL_RATING = 0.6, DODGE_RATING = 0.6, PARRY_RATING = 0.6, BLOCK_RATING = 0.4, BLOCK_VALUE = 0.2, HEALTH = 0.05, ARMOR = 0.02 },
-	PALADIN = { STRENGTH = 0.8, STAMINA = 0.7, INTELLECT = 0.6, SPIRIT = 0.3, AGILITY = 0.2, ATTACK_POWER = 0.35,
-		SPELL_POWER = 0.5, SPELL_HEALING_DONE = 0.4, SPELL_DAMAGE_DONE = 0.2, MANA_REGENERATION = 0.5,
-		DEFENSE_SKILL_RATING = 0.5, DODGE_RATING = 0.5, PARRY_RATING = 0.5, BLOCK_RATING = 0.4, BLOCK_VALUE = 0.2, HIT_RATING = 0.6, CRIT_RATING = 0.6,
-		MANA = 0.03, HEALTH = 0.04, ARMOR = 0.02 },
-	HUNTER  = { AGILITY = 1.0, STAMINA = 0.6, INTELLECT = 0.4, STRENGTH = 0.2, SPIRIT = 0.1, ATTACK_POWER = 0.4, RANGED_ATTACK_POWER = 0.5,
-		HIT_RATING = 0.8, CRIT_RATING = 0.8, MANA = 0.02, HEALTH = 0.03, ARMOR = 0.01 },
-	ROGUE   = { AGILITY = 1.0, STRENGTH = 0.8, STAMINA = 0.6, ATTACK_POWER = 0.45, HIT_RATING = 0.9, CRIT_RATING = 0.8, HEALTH = 0.03, ARMOR = 0.01 },
-	PRIEST  = { INTELLECT = 0.8, SPIRIT = 0.8, STAMINA = 0.5, SPELL_POWER = 0.6, SPELL_HEALING_DONE = 0.6, SPELL_DAMAGE_DONE = 0.5,
-		MANA_REGENERATION = 0.6, HIT_RATING = 0.5, CRIT_RATING = 0.4, MANA = 0.04, HEALTH = 0.02, ARMOR = 0.005 },
-	SHAMAN  = { INTELLECT = 0.7, STRENGTH = 0.6, STAMINA = 0.6, SPIRIT = 0.4, AGILITY = 0.4, ATTACK_POWER = 0.3,
-		SPELL_POWER = 0.5, SPELL_HEALING_DONE = 0.4, SPELL_DAMAGE_DONE = 0.4, MANA_REGENERATION = 0.5, HIT_RATING = 0.5, CRIT_RATING = 0.5,
-		MANA = 0.03, HEALTH = 0.03, ARMOR = 0.015 },
-	MAGE    = { INTELLECT = 1.0, SPIRIT = 0.6, STAMINA = 0.5, SPELL_POWER = 0.6, SPELL_DAMAGE_DONE = 0.6, SPELL_HEALING_DONE = 0.1,
-		MANA_REGENERATION = 0.4, HIT_RATING = 0.6, CRIT_RATING = 0.5, MANA = 0.04, HEALTH = 0.02, ARMOR = 0.005 },
-	WARLOCK = { INTELLECT = 0.8, STAMINA = 0.7, SPIRIT = 0.5, SPELL_POWER = 0.6, SPELL_DAMAGE_DONE = 0.6, SPELL_HEALING_DONE = 0.1,
-		MANA_REGENERATION = 0.4, HIT_RATING = 0.6, CRIT_RATING = 0.5, MANA = 0.04, HEALTH = 0.03, ARMOR = 0.005 },
-	DRUID   = { INTELLECT = 0.6, SPIRIT = 0.5, STAMINA = 0.6, STRENGTH = 0.5, AGILITY = 0.5, ATTACK_POWER = 0.3, FERAL_ATTACK_POWER = 0.3,
-		SPELL_POWER = 0.5, SPELL_HEALING_DONE = 0.5, SPELL_DAMAGE_DONE = 0.3, MANA_REGENERATION = 0.5, HIT_RATING = 0.4, CRIT_RATING = 0.4,
-		MANA = 0.03, HEALTH = 0.03, ARMOR = 0.015 },
+	WARRIOR = { STRENGTH = 2.2, ATTACK_POWER = 1.0, AGILITY = 1.0, HIT_RATING = 1.5, CRIT_RATING = 1.2, STAMINA = 0.6,
+		DEFENSE_SKILL_RATING = 0.6, DODGE_RATING = 0.6, PARRY_RATING = 0.6, BLOCK_RATING = 0.3, BLOCK_VALUE = 0.1, ARMOR = 0.15, HEALTH = 0.05 },
+	PALADIN = { STRENGTH = 2.0, ATTACK_POWER = 0.9, INTELLECT = 1.0, SPELL_POWER = 0.8, SPELL_HEALING_DONE = 0.7, SPELL_DAMAGE_DONE = 0.3,
+		STAMINA = 0.6, SPIRIT = 0.3, AGILITY = 0.4, MANA_REGENERATION = 0.8, HIT_RATING = 1.0, CRIT_RATING = 1.0,
+		DEFENSE_SKILL_RATING = 0.5, DODGE_RATING = 0.5, PARRY_RATING = 0.5, BLOCK_RATING = 0.3, BLOCK_VALUE = 0.1, ARMOR = 0.15, MANA = 0.03, HEALTH = 0.04 },
+	HUNTER  = { AGILITY = 2.2, ATTACK_POWER = 1.0, RANGED_ATTACK_POWER = 1.0, HIT_RATING = 1.5, CRIT_RATING = 1.2,
+		SPIRIT = 0.3, STAMINA = 0.2, ARMOR = 0.15, INTELLECT = 0.1, STRENGTH = 0.1 },
+	ROGUE   = { AGILITY = 2.2, STRENGTH = 1.1, ATTACK_POWER = 1.0, HIT_RATING = 1.5, CRIT_RATING = 1.2, STAMINA = 0.3, ARMOR = 0.1 },
+	PRIEST  = { INTELLECT = 1.6, SPIRIT = 1.4, SPELL_POWER = 1.2, SPELL_HEALING_DONE = 1.2, SPELL_DAMAGE_DONE = 0.9,
+		MANA_REGENERATION = 1.5, HIT_RATING = 0.8, CRIT_RATING = 0.6, STAMINA = 0.3, MANA = 0.05, ARMOR = 0.05 },
+	SHAMAN  = { INTELLECT = 1.4, STRENGTH = 1.0, AGILITY = 0.6, ATTACK_POWER = 0.6, SPELL_POWER = 1.0, SPELL_HEALING_DONE = 0.8, SPELL_DAMAGE_DONE = 0.8,
+		SPIRIT = 0.6, STAMINA = 0.4, MANA_REGENERATION = 1.0, HIT_RATING = 0.8, CRIT_RATING = 0.8, MANA = 0.03, ARMOR = 0.1 },
+	MAGE    = { INTELLECT = 2.0, SPIRIT = 0.8, SPELL_POWER = 1.2, SPELL_DAMAGE_DONE = 1.2, SPELL_HEALING_DONE = 0.1,
+		MANA_REGENERATION = 0.7, HIT_RATING = 1.0, CRIT_RATING = 0.8, STAMINA = 0.3, MANA = 0.05, ARMOR = 0.05 },
+	WARLOCK = { INTELLECT = 1.8, STAMINA = 0.8, SPIRIT = 0.5, SPELL_POWER = 1.2, SPELL_DAMAGE_DONE = 1.2, SPELL_HEALING_DONE = 0.1,
+		MANA_REGENERATION = 0.6, HIT_RATING = 1.0, CRIT_RATING = 0.8, MANA = 0.05, ARMOR = 0.05 },
+	DRUID   = { INTELLECT = 1.2, SPIRIT = 0.9, STRENGTH = 0.8, AGILITY = 0.8, ATTACK_POWER = 0.5, FERAL_ATTACK_POWER = 0.5,
+		SPELL_POWER = 0.9, SPELL_HEALING_DONE = 0.9, SPELL_DAMAGE_DONE = 0.5, MANA_REGENERATION = 0.9, HIT_RATING = 0.6, CRIT_RATING = 0.6,
+		STAMINA = 0.4, MANA = 0.03, ARMOR = 0.1 },
 }
 
 -- Weapon damage per second counts for every class that can use the weapon.
@@ -187,6 +189,49 @@ end
 
 function Rules.IsWeapon(classID, subclassID)
 	return classID == Rules.CLASS_WEAPON and subclassID ~= W.FISHINGPOLE
+end
+
+--------------------------------------------------------------------------------
+-- Weapon training. The class table says what the class can ever learn; the
+-- character's skill lines (GetNumSkillLines / GetSkillLineInfo, the Skills panel)
+-- say what is trained right now. Skill names are matched against the weapon
+-- subclass name the client returns (C_Item.GetItemSubClassInfo), with the plural
+-- forms the skill list uses ("Two-Handed Swords" vs subclass "Two-Handed Swords",
+-- "Bows" vs "Bows", "Daggers" vs "Daggers"), compared case-insensitively.
+--------------------------------------------------------------------------------
+Rules.SKILL_LINE_NAMES = {
+	[W.AXE1H] = { "Axes", "One-Handed Axes" }, [W.AXE2H] = { "Two-Handed Axes" },
+	[W.BOW] = { "Bows" }, [W.GUN] = { "Guns" }, [W.CROSSBOW] = { "Crossbows" },
+	[W.MACE1H] = { "Maces", "One-Handed Maces" }, [W.MACE2H] = { "Two-Handed Maces" },
+	[W.POLEARM] = { "Polearms" }, [W.SWORD1H] = { "Swords", "One-Handed Swords" }, [W.SWORD2H] = { "Two-Handed Swords" },
+	[W.STAFF] = { "Staves" }, [W.FIST] = { "Fist Weapons" }, [W.DAGGER] = { "Daggers" },
+	[W.THROWN] = { "Thrown" }, [W.WAND] = { "Wands" },
+}
+
+-- Lower-cased skill name -> rank, for every skill line the character has.
+function Rules.TrainedSkills()
+	if type(GetNumSkillLines) ~= "function" or type(GetSkillLineInfo) ~= "function" then return nil end -- API absent: cannot tell
+	local skills = {}
+	local n = NS.SafeNumber(NS.Call("GetNumSkillLines"))
+	if not n then return nil end
+	for i = 1, n do
+		local name, isHeader, _, rank = NS.Call("GetSkillLineInfo", i)
+		name = NS.SafeString(name)
+		if name and not NS.SafeBool(isHeader) then skills[name:lower()] = NS.SafeNumber(rank) or 0 end
+	end
+	return skills
+end
+
+-- true / false, or nil when the client cannot say (no skill API).
+function Rules.HasWeaponSkill(subclass)
+	local skills = Rules.TrainedSkills()
+	if not skills then return nil end
+	local names = { NS.SafeString(NS.Call("C_Item.GetItemSubClassInfo", Rules.CLASS_WEAPON, subclass)) }
+	for _, alias in ipairs(Rules.SKILL_LINE_NAMES[subclass] or {}) do names[#names + 1] = alias end
+	for _, name in ipairs(names) do
+		if name and skills[name:lower()] then return true end
+	end
+	return false
 end
 
 -- Trinkets are a personal choice like weapons: their "Use:" effects are not scored.

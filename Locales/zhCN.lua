@@ -282,6 +282,9 @@ L["Chat messages for quests accepted, handed in and rewards chosen"] = "接受�
 L["Sample quest"] = "示例任务"
 L["Preview: drag me into place, then untick the setting to lock."] = "预览：把我拖到合适位置，然后取消勾选设置以锁定。"
 L["ilevel"] = "物品等级"
+L["ilvl"] = "等级"
+L["recommended"] = "推荐"
+L["your pick"] = "你的选择"
 
 -- Pending quest list (pick window + minimap tooltip)
 L["(auto)"] = "（自动）"
@@ -322,3 +325,20 @@ L["Uses original quest automation. Valid pre-picks override automatic reward rec
 -- Settings layout and product-facing headings.
 L["Reward selection"] = "奖励选择"
 L["Automatically accepts and turns in quests. Pre-pick rewards or use automatic selection. Settings marked Not implemented do not affect automation."] = "自动接受并交付任务。可以预选奖励或使用自动选择。标为尚未实现的设置不影响自动化。"
+
+-- Notice on a gossip/greeting panel left open on purpose (Notice.lua)
+L["%s: %s"] = "%s：%s"
+L[", "] = "，"
+L["a low-level quest"] = "1 个低等级任务"
+L["%d low-level quests"] = "%d 个低等级任务"
+L["a repeatable quest"] = "1 个可重复任务"
+L["%d repeatable quests"] = "%d 个可重复任务"
+L["an ignored quest"] = "1 个已忽略的任务"
+L["%d ignored quests"] = "%d 个已忽略的任务"
+
+-- Untrained weapon (class can learn it, skill not trained yet)
+L["needs weapon training"] = "需要学习武器技能"
+-- Stat value vs the worn item
+L["%s over what you wear"] = "比当前装备高 %s"
+L["no reward beats what you wear"] = "没有奖励优于你当前的装备"
+L["no reward has stats your class wants"] = "没有奖励带有你职业需要的属性"

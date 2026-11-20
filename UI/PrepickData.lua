@@ -75,31 +75,10 @@ function Data.ItemStats(link)
 	return Rewards.StatsFromTooltipData(NS.Call("C_TooltipInfo.GetHyperlink", link))
 end
 
--- Display comparison only. One-hand weapons compare with main hand, rather
--- than treating an empty offhand as an upgrade. Paired jewellery uses the lower
--- item level. These facts never feed the original automation's decision.
-local SLOTS = {
-	INVTYPE_HEAD = {1}, INVTYPE_NECK = {2}, INVTYPE_SHOULDER = {3},
-	INVTYPE_CHEST = {5}, INVTYPE_ROBE = {5}, INVTYPE_WAIST = {6},
-	INVTYPE_LEGS = {7}, INVTYPE_FEET = {8}, INVTYPE_WRIST = {9}, INVTYPE_HAND = {10},
-	INVTYPE_FINGER = {11, 12}, INVTYPE_TRINKET = {13, 14}, INVTYPE_CLOAK = {15},
-	INVTYPE_WEAPON = {16}, INVTYPE_WEAPONMAINHAND = {16}, INVTYPE_2HWEAPON = {16},
-	INVTYPE_WEAPONOFFHAND = {17}, INVTYPE_HOLDABLE = {17}, INVTYPE_SHIELD = {17},
-	INVTYPE_RANGED = {18}, INVTYPE_RANGEDRIGHT = {18}, INVTYPE_THROWN = {18}, INVTYPE_RELIC = {18},
-}
-local function WornItem(equipLoc)
-	local worn
-	for _, slotID in ipairs(SLOTS[equipLoc or ""] or {}) do
-		local link = NS.SafeString(NS.Call("GetInventoryItemLink", "player", slotID))
-		local itemLevel = 0
-		if link then
-			local _, _, _, level = NS.Call("C_Item.GetItemInfo", link)
-			if type(level) ~= "number" then return nil end -- unknown is not an empty slot
-			itemLevel = level
-		end
-		if not worn or itemLevel < worn.itemLevel then worn = { link = link, itemLevel = itemLevel, slotID = slotID } end
-	end
-	return worn
+-- The worn item in the reward's slot, as the engine sees it (Rewards.WornItem):
+-- the same comparison that decides the pick is what the card shows.
+local function WornItem(equipLoc, player)
+	return Rewards.WornItem(equipLoc, player)
 end
 
 -- Translate the ORIGINAL decision shape for display, not for automation.
@@ -117,9 +96,11 @@ function Data.Evaluate(choices, settings, player, questID)
 	local suggested = original.choice
 	for _, choice in ipairs(choices) do
 		if choice.lootType == Rewards.LOOT_ITEM then
-			choice.fit = Rewards.FitScore(choice, player)
+			choice.fit = Rewards.FitScore(choice, player, settings)
+			-- Wearable = the class can use it; an untrained weapon still shows its stats.
 			choice.wearable = (choice.fit.typeScore or 0) > 0
-			choice.worn = choice.wearable and WornItem(choice.equipLoc) or nil
+			choice.untrained = choice.fit.untrained == true
+			choice.worn = choice.wearable and (choice.worn or WornItem(choice.equipLoc, player)) or nil
 			if not original.choice and (not suggested or Rewards.Better(choice, suggested)) then suggested = choice end
 		end
 	end
@@ -143,6 +124,7 @@ end
 
 function Data.ItemText(choice)
 	if choice.loaded == false then return L["item data not loaded"] end
+	if choice.untrained then return L["needs weapon training"] end
 	if choice.wearable then return L["wearable"] end
 	return L["cannot wear"]
 end

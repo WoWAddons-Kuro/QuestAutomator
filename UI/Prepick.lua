@@ -11,13 +11,19 @@ NS.PrePick = PrePick
 
 PrePick.FRAME_NAME = "QuestAutomatorPrePickFrame"
 PrePick.ICON_SIZE = 36
-PrePick.ROW_HEIGHT = 54        -- name line (14) + 2 grid lines (13 each) + spacing
+PrePick.ROW_HEIGHT = 54        -- minimum: name line (14) + 2 grid lines (13 each) + spacing
+PrePick.GRID_LINE_HEIGHT = 13  -- one line of the stat grid
+PrePick.ROW_GAP = 10           -- space between cards (the card border overhangs 3-4px)
 PrePick.WIDTH = 360
 PrePick.STAT_COLS = 2          -- stat deltas laid out in this many columns
 PrePick.LIST_LINE_HEIGHT = 16  -- one line per pending quest in the quest list
 PrePick.OPEN_DELAY = 0.3   -- seconds after QUEST_ACCEPTED before the log is read
 PrePick.MAX_LOAD_TRIES = 6
 PrePick.RETRY_DELAY = 0.5
+-- Inline marker icons after an item name (and in the legend): the engine's
+-- recommendation (gold star) and the player's stored pre-pick (green check).
+PrePick.ICON_RECOMMENDED = "|TInterface\\Buttons\\UI-GroupLoot-Coin-Up:0|t"
+PrePick.ICON_PICKED = "|TInterface\\RaidFrame\\ReadyCheck-Ready:0|t"
 
 local frame, rows, questLines = nil, {}, {}
 local state = { questID = nil, choices = nil, decision = nil, attempt = 0 }
@@ -179,6 +185,14 @@ local function BuildFrame()
 	f.Later:SetText(L["Decide at hand-in"])
 	f.Later:SetScript("OnClick", function() PrePick.Dismiss() end)
 
+	-- Legend for the marker icons shown after item names, above the button.
+	f.Legend = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	f.Legend:SetPoint("BOTTOM", f.Later, "TOP", 0, 6)
+	f.Legend:SetWidth(PrePick.WIDTH - 40)
+	f.Legend:SetJustifyH("CENTER")
+	f.Legend:SetTextColor(0.69, 0.69, 0.69)
+	f.Legend:SetText(PrePick.ICON_RECOMMENDED .. " " .. L["recommended"] .. "     " .. PrePick.ICON_PICKED .. " " .. L["your pick"])
+
 	-- Quest list: one line per pending quest, under the reason line; the shown
 	-- quest is highlighted, clicking another switches the rows to it. Hidden when
 	-- only one quest is pending (the title already names it).
@@ -244,9 +258,26 @@ local function BuildRow(index)
 
 	row.Name = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	row.Name:SetPoint("TOPLEFT", row, "TOPLEFT", PrePick.ICON_SIZE + 8, 0)
-	row.Name:SetPoint("RIGHT", row, "RIGHT", -4, 0)
 	row.Name:SetHeight(14)
 	row.Name:SetJustifyH("LEFT")
+	row.Name:SetWordWrap(false)
+	-- Name line, fully justified: name (left) | vendor value (centre) | ilvl (right),
+	-- the latter two in the small font. The three cells split the width left of
+	-- the icon in fixed thirds-ish so the columns line up on every row.
+	local nameLeft = PrePick.ICON_SIZE + 8
+	local lineW = PrePick.WIDTH - 40 - nameLeft - 4
+	local sideW = math.floor(lineW * 0.28)
+	row.Name:SetWidth(lineW - 2 * sideW)
+	row.Value = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	row.Value:SetPoint("TOP", row, "TOP", 0, -1)
+	row.Value:SetPoint("LEFT", row, "LEFT", nameLeft + (lineW - sideW) / 2, 0)
+	row.Value:SetSize(sideW, 12)
+	row.Value:SetJustifyH("CENTER")
+	row.Level = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	row.Level:SetPoint("TOP", row, "TOP", 0, -1)
+	row.Level:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+	row.Level:SetSize(sideW, 12)
+	row.Level:SetJustifyH("RIGHT")
 
 	-- Stat delta grid under the name: STAT_COLS columns, each a fixed layout of
 	--   [label cell ................][value cell][delta cell]
@@ -266,9 +297,11 @@ local function BuildRow(index)
 	local gap = 4
 	local labelW = colW - valueW - deltaW - 2 * gap - 8
 	-- Rows of the grid hang off the Name's bottom edge (so they always clear it);
-	-- only the x offsets are fixed against the row.
-	local lineH = 13
-	for i = 1, PrePick.STAT_COLS * 2 do
+	-- only the x offsets are fixed against the row. Cells are created on demand
+	-- (PrePick.Cell) so a reward with many stats gets as many lines as it needs.
+	local lineH = PrePick.GRID_LINE_HEIGHT
+	row.gridLeft, row.colW, row.labelW, row.valueW, row.deltaW, row.gap = gridLeft, colW, labelW, valueW, deltaW, gap
+	function row:MakeCell(i)
 		local col, line = (i - 1) % PrePick.STAT_COLS, math.floor((i - 1) / PrePick.STAT_COLS)
 		local x0 = gridLeft + col * colW
 		local y = -3 - line * lineH
@@ -289,13 +322,22 @@ local function BuildRow(index)
 		delta:SetPoint("LEFT", row, "LEFT", x0 + labelW + gap + valueW + gap, 0)
 		delta:SetSize(deltaW, 12)
 		delta:SetJustifyH("LEFT")
-		row.Cells[i] = { label = label, value = value, delta = delta }
+		local cell = { label = label, value = value, delta = delta }
+		row.Cells[i] = cell
+		return cell
 	end
 	-- Hidden alternative when there is nothing to compare: the engine's reason text.
 	row.Info = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	row.Info:SetPoint("TOPLEFT", row.Name, "BOTTOMLEFT", 0, -2)
 	row.Info:SetPoint("RIGHT", row, "RIGHT", -4, 0)
 	row.Info:SetJustifyH("LEFT")
+	-- Centred orange warning under the grid (untrained weapon).
+	row.Warn = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	row.Warn:SetPoint("LEFT", row, "LEFT", gridLeft, 0)
+	row.Warn:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+	row.Warn:SetJustifyH("CENTER")
+	row.Warn:SetTextColor(1, 0.6, 0.2)
+	row.Warn:Hide()
 
 	row.Highlight = row:CreateTexture(nil, "HIGHLIGHT")
 	row.Highlight:SetAllPoints(row)
@@ -356,8 +398,7 @@ end
 
 function PrePick.StatDeltas(c, player)
 	local out = {}
-	local wornLevel = c.worn and c.worn.itemLevel or nil
-	out[#out + 1] = { label = L["ilevel"], value = c.itemLevel or 0, delta = wornLevel and ((c.itemLevel or 0) - wornLevel) or nil }
+	-- Item level lives on the name line (row.Level); the grid is stats only.
 	local worn = WornStats(c)
 	local wornKnown = worn ~= nil
 	worn = worn or {}
@@ -508,24 +549,52 @@ function PrePick.Render()
 			local hex = colors and colors.hex or "|cffffffff"
 			local isPicked = picked ~= nil and c.itemID == picked
 			local isSuggested = decision and decision.index == c.index
-			row.Name:SetText(hex .. (c.name or "?") .. "|r" .. (isPicked and (" |cff40ff40" .. L["(your pick)"] .. "|r") or ""))
-			-- Stat grid when the item is wearable (there is something to compare); the
-			-- engine's reason line otherwise (hard to value, cannot wear...).
+			-- Name line: [name + marker icons] left, vendor value centre, ilvl right.
+			local marks = (isSuggested and (" " .. PrePick.ICON_RECOMMENDED) or "") .. (isPicked and (" " .. PrePick.ICON_PICKED) or "")
+			row.Name:SetText(hex .. (c.name or "?") .. "|r" .. marks)
+			row.Value:SetText(c.loaded == false and "" or NS.FormatMoney((c.sellPrice or 0) * (c.count or 1)))
+			local wornLevel = c.worn and c.worn.itemLevel or nil
+			row.Level:SetText(string.format("|cffb0b0b0%s|r %s%s", L["ilvl"], FormatValue(c.itemLevel or 0), FormatDelta(wornLevel and ((c.itemLevel or 0) - wornLevel) or nil)))
+			-- Stat grid when the item is wearable (there is something to compare), as
+			-- many lines as the stats need; the engine's reason line otherwise. The card
+			-- grows to fit; an untrained weapon gets a centred warning under the grid.
 			local deltas = c.wearable and PrePick.StatDeltas(c, player) or nil
+			local gridLines = 0
 			if deltas and #deltas > 0 then
-				for j, cell in ipairs(row.Cells) do FillCell(cell, deltas[j]) end
+				for j = 1, math.max(#deltas, #row.Cells) do
+					FillCell(row.Cells[j] or row:MakeCell(j), deltas[j])
+				end
+				gridLines = math.ceil(#deltas / PrePick.STAT_COLS)
 				row.Info:Hide()
 			else
 				for _, cell in ipairs(row.Cells) do FillCell(cell, nil) end
 				row.Info:SetText(Data.ItemText(c))
 				row.Info:Show()
+				gridLines = 1
 			end
+			local height = 14 + 3 + gridLines * PrePick.GRID_LINE_HEIGHT
+			if c.untrained and deltas and #deltas > 0 then
+				-- Centred inside the card, one grid line below the last stat line.
+				row.Warn:SetText(L["needs weapon training"])
+				row.Warn:ClearAllPoints()
+				row.Warn:SetPoint("LEFT", row, "LEFT", row.gridLeft, 0)
+				row.Warn:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+				row.Warn:SetPoint("TOP", row, "TOP", 0, -height - 2)
+				row.Warn:SetHeight(PrePick.GRID_LINE_HEIGHT)
+				row.Warn:Show()
+				height = height + 2 + PrePick.GRID_LINE_HEIGHT
+			else
+				row.Warn:Hide()
+			end
+			height = math.max(PrePick.ROW_HEIGHT - PrePick.ROW_GAP, height + 2)
+			row:SetHeight(height)
 			row.Border:SetShown(isPicked or (picked == nil and isSuggested))
 			row:Show()
-			y = y - PrePick.ROW_HEIGHT
+			y = y - height - PrePick.ROW_GAP
 		end
 	end
 	for i = shown + 1, #rows do rows[i]:Hide() end
+	frame.Legend:SetShown(shown > 0)
 	frame:SetHeight(-y + 40)
 	frame:Show()
 end
