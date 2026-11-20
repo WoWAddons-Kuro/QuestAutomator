@@ -549,12 +549,13 @@ function PrePick.Render()
 			local hex = colors and colors.hex or "|cffffffff"
 			local isPicked = picked ~= nil and c.itemID == picked
 			local isSuggested = decision and decision.index == c.index
-			-- Name line: [name + marker icons] left, vendor value centre, ilvl right.
-			local marks = (isSuggested and (" " .. PrePick.ICON_RECOMMENDED) or "") .. (isPicked and (" " .. PrePick.ICON_PICKED) or "")
-			row.Name:SetText(hex .. (c.name or "?") .. "|r" .. marks)
+			-- Name line: [name + your-pick check] left, vendor value centre, [recommended
+			-- coin] ilvl right: the coin sits beside the ilvl so long names do not push it off.
+			row.Name:SetText(hex .. (c.name or "?") .. "|r" .. (isPicked and (" " .. PrePick.ICON_PICKED) or ""))
 			row.Value:SetText(c.loaded == false and "" or NS.FormatMoney((c.sellPrice or 0) * (c.count or 1)))
 			local wornLevel = c.worn and c.worn.itemLevel or nil
-			row.Level:SetText(string.format("|cffb0b0b0%s|r %s%s", L["ilvl"], FormatValue(c.itemLevel or 0), FormatDelta(wornLevel and ((c.itemLevel or 0) - wornLevel) or nil)))
+			row.Level:SetText(string.format("%s|cffb0b0b0%s|r %s%s", isSuggested and (PrePick.ICON_RECOMMENDED .. " ") or "",
+				L["ilvl"], FormatValue(c.itemLevel or 0), FormatDelta(wornLevel and ((c.itemLevel or 0) - wornLevel) or nil)))
 			-- Stat grid when the item is wearable (there is something to compare), as
 			-- many lines as the stats need; the engine's reason line otherwise. The card
 			-- grows to fit; an untrained weapon gets a centred warning under the grid.
