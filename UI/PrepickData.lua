@@ -82,7 +82,9 @@ local function WornItem(equipLoc, player)
 end
 
 -- Translate the ORIGINAL decision shape for display, not for automation.
--- When it declines to pick, a fit-based suggestion may still be highlighted.
+-- The highlighted suggestion is what the reward RULES recommend, never the saved
+-- pre-pick: picking an item must not move the recommended badge onto it. When the
+-- rules decline to pick, the best fit-scored choice is suggested instead.
 function Data.Evaluate(choices, settings, player, questID)
 	local resolved = NS.TurnInResolver.Resolve({
 		questID = questID, rewardChoiceCount = #choices, rewardChoices = choices,
@@ -93,7 +95,12 @@ function Data.Evaluate(choices, settings, player, questID)
 	end
 	local original = resolved.rewardDecision or { reason = resolved.reason, pending = resolved.action == "wait" }
 	if original.pending then return { pending = true, reason = "pending", prePickStatus = resolved.prePickStatus } end
-	local suggested = original.choice
+	-- The rules' own verdict, with the pre-pick out of the way.
+	local ruled = original
+	if original.reason == "prepick" then
+		ruled = Rewards.Evaluate(choices, settings, player)
+	end
+	local suggested = ruled.choice
 	for _, choice in ipairs(choices) do
 		if choice.lootType == Rewards.LOOT_ITEM then
 			choice.fit = Rewards.FitScore(choice, player, settings)
@@ -101,7 +108,7 @@ function Data.Evaluate(choices, settings, player, questID)
 			choice.wearable = (choice.fit.typeScore or 0) > 0
 			choice.untrained = choice.fit.untrained == true
 			choice.worn = choice.wearable and (choice.worn or WornItem(choice.equipLoc, player)) or nil
-			if not original.choice and (not suggested or Rewards.Better(choice, suggested)) then suggested = choice end
+			if not ruled.choice and (not suggested or Rewards.Better(choice, suggested)) then suggested = choice end
 		end
 	end
 	return {
