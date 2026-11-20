@@ -69,11 +69,12 @@ Rewards.FORMATS = {
 	ITEM_MOD_BLOCK_VALUE = { "Increases the block value of your shield by %s.", "使你的盾牌格挡值提高%s点。" },
 	DPS_TEMPLATE = { "(%s damage per second)", "（每秒伤害%s）" },
 	ARMOR_TEMPLATE = { "%s Armor", "%s点护甲" },
+	SPEED_TEMPLATE = { "Speed %s", "速度 %s" },
 	ITEM_SPELL_TRIGGER_ONEQUIP = { "Equip:", "装备：" },
 }
 
 -- Tag -> stat key for the pseudo-stats.
-Rewards.TEMPLATE_KEYS = { DPS_TEMPLATE = "DAMAGE_PER_SECOND", ARMOR_TEMPLATE = "ARMOR" }
+Rewards.TEMPLATE_KEYS = { DPS_TEMPLATE = "DAMAGE_PER_SECOND", ARMOR_TEMPLATE = "ARMOR", SPEED_TEMPLATE = "ATTACK_SPEED" }
 
 --------------------------------------------------------------------------------
 -- Format strings -> Lua patterns. "%c" becomes an optional sign, "%s" / "%d" a
@@ -222,12 +223,14 @@ function Rewards.StatsFromTooltipData(data)
 	if type(data) ~= "table" or type(data.lines) ~= "table" then return nil end
 	local stats, any = {}, false
 	for _, line in ipairs(data.lines) do
-		local text = type(line) == "table" and NS.SafeString(line.leftText) or nil
-		if text then
-			local key, value = Rewards.ParseStatLine(text)
-			if key then
-				stats[key] = (stats[key] or 0) + value
-				any = true
+		if type(line) == "table" then
+			-- Both columns: "Speed 2.90" sits in rightText beside the damage range.
+			for _, text in ipairs({ NS.SafeString(line.leftText), NS.SafeString(line.rightText) }) do
+				local key, value = Rewards.ParseStatLine(text)
+				if key then
+					stats[key] = (stats[key] or 0) + value
+					any = true
+				end
 			end
 		end
 	end
@@ -327,10 +330,10 @@ function Rewards.FitScore(c, player, settings)
 	end
 	if typeScore <= 0 then return { score = 0, why = "cannotwear", typeName = typeName } end
 	local statScore, parts = 0, {}
+	local weaponSubclass = Rules.IsWeapon(c.classID, c.subclassID) and c.subclassID or nil
 	for key, amount in pairs(c.stats) do
-		local weight = player.weights[key] or 0
-		if key == "DAMAGE_PER_SECOND" and Rules.IsWeapon(c.classID, c.subclassID) then weight = Rules.DPS_WEIGHT end
-		if weight > 0 and amount ~= 0 then
+		local weight = Rewards.WeightFor(player, key, weaponSubclass)
+		if weight ~= 0 and amount ~= 0 then
 			statScore = statScore + weight * amount
 			parts[#parts + 1] = { key = key, amount = amount, value = weight * amount }
 		end
@@ -344,15 +347,29 @@ end
 
 --------------------------------------------------------------------------------
 -- Stat value: the weighted sum of an item's stats for the player's class, in
--- "stat points" (Rules.WEIGHTS). Weapons add DPS. A stat the class has no weight
--- for counts nothing, so cloth boots with spell damage are worth 0 to a hunter.
+-- "stat points" (Rules.WEIGHTS). A stat the class has no weight for counts
+-- nothing, so cloth boots with spell damage are worth 0 to a hunter. Weapons add
+-- DPS and attack speed at the class's melee or ranged weight (Rules.WeaponWeight,
+-- picked by the weapon's kind); speed weights may be negative (slower is better).
 --------------------------------------------------------------------------------
-function Rewards.StatValue(stats, player, isWeapon)
+-- Pseudo-stats that are resolved per weapon kind rather than read straight from WEIGHTS.
+Rewards.WEAPON_STAT_KEYS = { DAMAGE_PER_SECOND = "DPS", ATTACK_SPEED = "SPEED" }
+
+local function WeightFor(player, key, weaponSubclass)
+	local kindKey = Rewards.WEAPON_STAT_KEYS[key]
+	if kindKey then
+		if not weaponSubclass then return 0 end
+		return Rules.WeaponWeight(player, weaponSubclass, kindKey)
+	end
+	return player.weights[key] or 0
+end
+Rewards.WeightFor = WeightFor
+
+function Rewards.StatValue(stats, player, weaponSubclass)
 	local total = 0
 	for key, amount in pairs(stats or {}) do
-		local weight = player.weights[key] or 0
-		if key == "DAMAGE_PER_SECOND" and isWeapon then weight = Rules.DPS_WEIGHT end
-		if weight > 0 and amount then total = total + weight * amount end
+		local weight = WeightFor(player, key, weaponSubclass)
+		if weight ~= 0 and amount then total = total + weight * amount end
 	end
 	return total
 end
@@ -398,7 +415,8 @@ function Rewards.WornItem(equipLoc, player)
 			local _, _, _, _, _, classID, subclassID = NS.Call("C_Item.GetItemInfoInstant", link)
 			entry.link, entry.itemLevel = link, level
 			entry.stats = Rewards.WornItemStats(link)
-			entry.value = player and Rewards.StatValue(entry.stats, player, Rules.IsWeapon(NS.SafeNumber(classID), NS.SafeNumber(subclassID))) or 0
+			local wornSubclass = Rules.IsWeapon(NS.SafeNumber(classID), NS.SafeNumber(subclassID)) and NS.SafeNumber(subclassID) or nil
+			entry.value = player and Rewards.StatValue(entry.stats, player, wornSubclass) or 0
 		end
 		if not worn or entry.value < worn.value then worn = entry end
 	end
@@ -510,8 +528,8 @@ function Rewards.Evaluate(choices, settings, player)
 		-- wearability (for the weapon/trinket guards) but is treated as vendor
 		-- value only, so zero-stat boots cannot beat a real upgrade.
 		if c.fit.score > 0 then
-			local isWeapon = Rules.IsWeapon(c.classID, c.subclassID)
-			c.statValue = Rewards.StatValue(c.stats, player, isWeapon)
+			local weaponSubclass = Rules.IsWeapon(c.classID, c.subclassID) and c.subclassID or nil
+			c.statValue = Rewards.StatValue(c.stats, player, weaponSubclass)
 			c.worn = Rewards.WornItem(c.equipLoc, player)
 			if c.worn then
 				c.wornValue = c.worn.value

@@ -45,13 +45,25 @@ local function BuildRow(parent, entry, onChanged)
 	row.Box:SetNumeric(false)
 	row.Box:SetMaxLetters(5)
 	row.Box:SetJustifyH("RIGHT")
-	row.Default = row:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-	row.Default:SetPoint("LEFT", row.Box, "RIGHT", 4, 0)
-	row.Default:SetJustifyH("LEFT")
+	-- Placeholder: the class default, grey, inside the box while it is empty.
+	row.Placeholder = row.Box:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+	row.Placeholder:SetPoint("RIGHT", row.Box, "RIGHT", -2, 0)
+	row.Placeholder:SetJustifyH("RIGHT")
+	local function RefreshPlaceholder()
+		local text = row.Box:GetText() or ""
+		row.Placeholder:SetShown(text == "" and (row.Placeholder:GetText() or "") ~= "")
+	end
 	local function Commit(box)
 		local class = Rules.Class()
 		if not class then return end
-		local v = ParseWeight(box:GetText())
+		local text = box:GetText() or ""
+		if text:match("^%s*$") then
+			Rules.SetUserWeight(class, entry.key, nil) -- cleared: back to the default
+			row:Update()
+			if onChanged then onChanged() end
+			return
+		end
+		local v = ParseWeight(text)
 		if v == nil then
 			row:Update()
 			return
@@ -63,6 +75,7 @@ local function BuildRow(parent, entry, onChanged)
 	row.Box:SetScript("OnEnterPressed", function(self) Commit(self); self:ClearFocus() end)
 	row.Box:SetScript("OnEditFocusLost", Commit)
 	row.Box:SetScript("OnEscapePressed", function(self) row:Update(); self:ClearFocus() end)
+	row.Box:SetScript("OnTextChanged", RefreshPlaceholder)
 	row.Box:SetScript("OnEnter", function(self)
 		if not GameTooltip then return end
 		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -73,17 +86,19 @@ local function BuildRow(parent, entry, onChanged)
 	row.Box:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 	function row:Update()
 		local class = Rules.Class()
-		local effective = Rules.EffectiveWeight(class, entry.key)
 		local default = Rules.DefaultWeight(class, entry.key)
-		self.Box:SetText(FormatWeight(effective))
-		if Rules.UserWeight(class, entry.key) ~= nil then
-			self.Default:SetText(string.format(L["default %s"], FormatWeight(default)))
+		local user = Rules.UserWeight(class, entry.key)
+		-- The box holds only what the player typed; the default sits behind it in grey.
+		self.Placeholder:SetText(default > 0 and FormatWeight(default) or "")
+		if user ~= nil then
+			self.Box:SetText(FormatWeight(user))
 			self.Label:SetTextColor(1, 0.82, 0)
+			if user > 0 then self.Box:SetTextColor(1, 1, 1) else self.Box:SetTextColor(0.5, 0.5, 0.5) end
 		else
-			self.Default:SetText("")
+			self.Box:SetText("")
 			self.Label:SetTextColor(1, 1, 1)
 		end
-		if effective > 0 then self.Box:SetTextColor(1, 1, 1) else self.Box:SetTextColor(0.5, 0.5, 0.5) end
+		RefreshPlaceholder()
 	end
 	return row
 end

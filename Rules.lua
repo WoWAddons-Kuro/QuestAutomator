@@ -80,8 +80,8 @@ Rules.EXTRA_KEYS = { "ARMOR", "DAMAGE_PER_SECOND" }
 Rules.WEIGHTS = {
 	WARRIOR = { STRENGTH = 2.2, ATTACK_POWER = 1.0, AGILITY = 1.0, HIT_RATING = 1.5, CRIT_RATING = 1.2, STAMINA = 0.6,
 		DEFENSE_SKILL_RATING = 0.6, DODGE_RATING = 0.6, PARRY_RATING = 0.6, BLOCK_RATING = 0.3, BLOCK_VALUE = 0.1, ARMOR = 0.15, HEALTH = 0.05 },
-	PALADIN = { STRENGTH = 2.0, ATTACK_POWER = 0.9, INTELLECT = 1.0, SPELL_POWER = 0.8, SPELL_HEALING_DONE = 0.7, SPELL_DAMAGE_DONE = 0.3,
-		STAMINA = 0.6, SPIRIT = 0.3, AGILITY = 0.4, MANA_REGENERATION = 0.8, HIT_RATING = 1.0, CRIT_RATING = 1.0,
+	PALADIN = { STRENGTH = 2.0, ATTACK_POWER = 0.9, INTELLECT = 0.5, SPELL_POWER = 0.8, SPELL_HEALING_DONE = 0.7, SPELL_DAMAGE_DONE = 0.3,
+		STAMINA = 0.7, SPIRIT = 0.3, AGILITY = 0.4, MANA_REGENERATION = 0.8, HIT_RATING = 1.0, CRIT_RATING = 1.0,
 		DEFENSE_SKILL_RATING = 0.5, DODGE_RATING = 0.5, PARRY_RATING = 0.5, BLOCK_RATING = 0.3, BLOCK_VALUE = 0.1, ARMOR = 0.15, MANA = 0.03, HEALTH = 0.04 },
 	HUNTER  = { AGILITY = 2.2, ATTACK_POWER = 1.0, RANGED_ATTACK_POWER = 1.0, HIT_RATING = 1.5, CRIT_RATING = 1.2,
 		SPIRIT = 0.3, STAMINA = 0.2, ARMOR = 0.15, INTELLECT = 0.1, STRENGTH = 0.1 },
@@ -92,15 +92,45 @@ Rules.WEIGHTS = {
 		SPIRIT = 0.6, STAMINA = 0.4, MANA_REGENERATION = 1.0, HIT_RATING = 0.8, CRIT_RATING = 0.8, MANA = 0.03, ARMOR = 0.1 },
 	MAGE    = { INTELLECT = 2.0, SPIRIT = 0.8, SPELL_POWER = 1.2, SPELL_DAMAGE_DONE = 1.2, SPELL_HEALING_DONE = 0.1,
 		MANA_REGENERATION = 0.7, HIT_RATING = 1.0, CRIT_RATING = 0.8, STAMINA = 0.3, MANA = 0.05, ARMOR = 0.05 },
-	WARLOCK = { INTELLECT = 1.8, STAMINA = 0.8, SPIRIT = 0.5, SPELL_POWER = 1.2, SPELL_DAMAGE_DONE = 1.2, SPELL_HEALING_DONE = 0.1,
+	WARLOCK = { INTELLECT = 0.8, STAMINA = 0.9, SPIRIT = 0.5, SPELL_POWER = 1.2, SPELL_DAMAGE_DONE = 1.2, SPELL_HEALING_DONE = 0.1,
 		MANA_REGENERATION = 0.6, HIT_RATING = 1.0, CRIT_RATING = 0.8, MANA = 0.05, ARMOR = 0.05 },
-	DRUID   = { INTELLECT = 1.2, SPIRIT = 0.9, STRENGTH = 0.8, AGILITY = 0.8, ATTACK_POWER = 0.5, FERAL_ATTACK_POWER = 0.5,
+	DRUID   = { STRENGTH = 2.1, AGILITY = 1.2, INTELLECT = 0.7, SPIRIT = 0.9, ATTACK_POWER = 0.5, FERAL_ATTACK_POWER = 0.5,
 		SPELL_POWER = 0.9, SPELL_HEALING_DONE = 0.9, SPELL_DAMAGE_DONE = 0.5, MANA_REGENERATION = 0.9, HIT_RATING = 0.6, CRIT_RATING = 0.6,
 		STAMINA = 0.4, MANA = 0.03, ARMOR = 0.1 },
 }
 
--- Weapon damage per second counts for every class that can use the weapon.
-Rules.DPS_WEIGHT = 0.6
+-- Weapon pseudo-stats, by weapon kind (Rules.WeaponCategory). DPS: what the class
+-- actually swings or shoots with is worth a lot, the other kind next to nothing.
+-- SPEED: the weapon's attack speed in seconds; negative = slower is better
+-- (normalised auto-attacks, big-hit specials), positive = faster is better
+-- (poisons, Windfury), 0 = does not matter. Stored in WEIGHTS under
+-- MELEE_DPS / RANGED_DPS / MELEE_SPEED / RANGED_SPEED so the editor and the
+-- per-account overrides treat them like any other stat.
+Rules.WEAPON_WEIGHT_KEYS = {
+	DPS = { melee = "MELEE_DPS", ranged = "RANGED_DPS" },
+	SPEED = { melee = "MELEE_SPEED", ranged = "RANGED_SPEED" },
+}
+Rules.DPS_DEFAULT = 0.1
+do
+	local melee  = { WARRIOR = 4.0, ROGUE = 4.0, SHAMAN = 4.0, PALADIN = 4.0 }
+	local ranged = { HUNTER = 4.0, PRIEST = 2.5, MAGE = 2.0 }
+	local meleeSpeed = { PALADIN = -0.1, HUNTER = -0.1, WARRIOR = -0.1, ROGUE = 0.1, SHAMAN = 0.1 }
+	for class, profile in pairs(Rules.WEIGHTS) do
+		profile.MELEE_DPS = melee[class] or Rules.DPS_DEFAULT
+		profile.RANGED_DPS = ranged[class] or Rules.DPS_DEFAULT
+		profile.MELEE_SPEED = meleeSpeed[class] or 0
+		profile.RANGED_SPEED = 0
+	end
+end
+
+-- The weight of a weapon pseudo-stat ("DPS" or "SPEED") for this player, by the
+-- weapon's kind. 0 for a non-weapon.
+function Rules.WeaponWeight(player, subclass, which)
+	local kind = Rules.WeaponCategory(subclass)
+	local keys = Rules.WEAPON_WEIGHT_KEYS[which]
+	local key = kind and keys and keys[kind]
+	return key and player.weights[key] or 0
+end
 
 -- The classes and stats shown in the stat-weight grid (Settings > Stat weights),
 -- in display order. CLASSES also fixes row order; EDITABLE_STATS the columns, each
@@ -116,6 +146,8 @@ Rules.EDITABLE_STATS = {
 	{ key = "DEFENSE_SKILL_RATING", short = "Def" }, { key = "DODGE_RATING", short = "Dodge" }, { key = "PARRY_RATING", short = "Parry" },
 	{ key = "BLOCK_RATING", short = "Block" }, { key = "BLOCK_VALUE", short = "BlkV" },
 	{ key = "ARMOR", short = "Armor" }, { key = "MANA", short = "Mana" }, { key = "HEALTH", short = "HP" },
+	{ key = "MELEE_DPS", short = "mDPS" }, { key = "RANGED_DPS", short = "rDPS" },
+	{ key = "MELEE_SPEED", short = "mSpd" }, { key = "RANGED_SPEED", short = "rSpd" },
 }
 
 -- User overrides of the class profiles live in NS.db.statWeights[class][key] (account
@@ -422,6 +454,12 @@ function Rules.StatName(key)
 	if key == "ARMOR" then return _G["RESISTANCE0_NAME"] or _G["ARMOR"] or L["Armor"] end
 	-- Our own short label: the client's ITEM_MOD_DAMAGE_PER_SECOND_SHORT is "Damage Per Second" and clips in the pick grid.
 	if key == "DAMAGE_PER_SECOND" then return L["Weapon DPS"] end
+	if key == "ATTACK_SPEED" then return L["Weapon speed"] end
+	-- Weapon pseudo-stats of the stat-value editor.
+	if key == "MELEE_DPS" then return L["Melee weapon DPS"] end
+	if key == "RANGED_DPS" then return L["Ranged weapon DPS"] end
+	if key == "MELEE_SPEED" then return L["Melee weapon speed"] end
+	if key == "RANGED_SPEED" then return L["Ranged weapon speed"] end
 	local name = _G["ITEM_MOD_" .. key .. "_SHORT"]
 	if type(name) == "string" and name ~= "" then return name end
 	return key:sub(1, 1) .. key:sub(2):lower():gsub("_", " ")
