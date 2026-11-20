@@ -96,17 +96,27 @@ end
 
 -- Forever's quest-log reward globals take questID (GetNumQuestLogChoices(questID),
 -- GetQuestLogChoiceInfo(i, questID) -> name, texture, count, quality, isUsable, itemID).
+-- GetQuestLogItemLink("choice", i) does NOT take questID: it reads the quest
+-- selected in the log, so for any other quest it returns another quest's reward
+-- (seen in-game: The People's Militia showing Miner's Revenge etc.). The link is
+-- therefore built from the itemID GetQuestLogChoiceInfo returns, and the global is
+-- only consulted when the selected quest is this quest.
 function Forever.QuestLogChoiceSource(questID)
 	local choices = {}
 	local count = NS.SafeNumber(NS.Call("GetNumQuestLogChoices", questID)) or 0
+	local selectedIsThis = Forever.SelectedQuestLogQuestID() == questID
 	for i = 1, count do
 		local name, texture, num, quality, isUsable, itemID = NS.Call("GetQuestLogChoiceInfo", i, questID)
 		itemID = NS.SafeNumber(itemID)
-		local link = NS.SafeString(NS.Call("GetQuestLogItemLink", "choice", i))
-		if itemID and not link then
+		local link
+		if itemID then
 			local _, itemLink = NS.Call("C_Item.GetItemInfo", itemID)
-			link = NS.SafeString(itemLink) or ("item:" .. itemID)
+			link = NS.SafeString(itemLink)
 		end
+		if not link and selectedIsThis then
+			link = NS.SafeString(NS.Call("GetQuestLogItemLink", "choice", i))
+		end
+		if not link and itemID then link = "item:" .. itemID end
 		choices[i] = { info = { name, texture, num, quality, isUsable, itemID }, link = link, itemID = itemID }
 	end
 	return {
