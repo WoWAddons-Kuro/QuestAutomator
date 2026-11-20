@@ -299,15 +299,30 @@ end
 --------------------------------------------------------------------------------
 -- Formatting helpers.
 --------------------------------------------------------------------------------
-function NS.FormatMoney(copper)
+-- Coin icons from the client's money frame atlas (the same texture the tooltip's
+-- "Sell Price" line uses). 0:0 sizes the icon to the font height.
+NS.COIN_ICONS = {
+	gold = "|TInterface\\MoneyFrame\\UI-GoldIcon:0:0:2:0|t",
+	silver = "|TInterface\\MoneyFrame\\UI-SilverIcon:0:0:2:0|t",
+	copper = "|TInterface\\MoneyFrame\\UI-CopperIcon:0:0:2:0|t",
+}
+
+-- "12 [g] 34 [s] 56 [c]" with coin icons; plain letters when plain = true (logs).
+function NS.FormatMoney(copper, plain)
 	copper = math.floor((tonumber(copper) or 0) + 0.5)
 	if copper < 0 then copper = 0 end
 	local gold = math.floor(copper / 10000)
 	local silver = math.floor((copper % 10000) / 100)
 	local c = copper % 100
-	if gold > 0 then return format(L["%dg %ds %dc"], gold, silver, c) end
-	if silver > 0 then return format(L["%ds %dc"], silver, c) end
-	return format(L["%dc"], c)
+	if plain then
+		if gold > 0 then return format(L["%dg %ds %dc"], gold, silver, c) end
+		if silver > 0 then return format(L["%ds %dc"], silver, c) end
+		return format(L["%dc"], c)
+	end
+	local I = NS.COIN_ICONS
+	if gold > 0 then return format("%d%s %d%s %d%s", gold, I.gold, silver, I.silver, c, I.copper) end
+	if silver > 0 then return format("%d%s %d%s", silver, I.silver, c, I.copper) end
+	return format("%d%s", c, I.copper)
 end
 
 function NS.SortedKeys(tbl)
