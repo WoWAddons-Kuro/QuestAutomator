@@ -357,4 +357,3 @@ L["Ranged weapon speed"] = "远程武器速度（负值：越慢越好）"
 -- Equipment tooltip score line (Tooltip.lua)
 L["Score line on equipment tooltips"] = "在装备提示中显示评分"
 L["Adds a Quest Automator line to every equipment tooltip: the item's stat value for your class, the gain or loss against what you wear in that slot, and whether it counts as an upgrade."] = "在每个装备提示中加一行：该物品对你职业的属性价值、与同部位当前装备的差值，以及是否算升级。"
-L["(empty slot)"] = "（空位）"

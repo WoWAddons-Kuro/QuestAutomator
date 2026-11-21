@@ -354,4 +354,3 @@ L["Ranged weapon speed"] = "Ranged weapon speed (negative: slower is better)"
 -- Equipment tooltip score line (Tooltip.lua)
 L["Score line on equipment tooltips"] = "Score line on equipment tooltips"
 L["Adds a Quest Automator line to every equipment tooltip: the item's stat value for your class, the gain or loss against what you wear in that slot, and whether it counts as an upgrade."] = "Adds a Quest Automator line to every equipment tooltip: the item's stat value for your class, the gain or loss against what you wear in that slot, and whether it counts as an upgrade."
-L["(empty slot)"] = "(empty slot)"

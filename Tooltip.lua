@@ -46,15 +46,15 @@ function Tooltip.Describe(link)
 	local value = Rewards.StatValue(c.stats, player, weaponSubclass)
 	local worn = Rewards.WornItem(equipLoc, player)
 	local out = { wearable = true, value = value, untrained = fit.untrained, player = player }
-	if worn and not worn.empty then
+	-- The item being hovered may BE the worn one (character panel, or a bag item of
+	-- the same kind): comparing it with itself says nothing, so only the score shows.
+	local isWorn = worn and worn.link == link
+	if worn and not worn.empty and not isWorn then
 		out.wornValue = worn.value
 		out.gain = value - worn.value
 		-- The same margin the hand-in uses (settings.upgradeBand percent).
 		local band = (tonumber(NS.db.settings.upgradeBand) or 10) / 100
 		out.upgrade = worn.value <= 0 and value > 0 or out.gain >= worn.value * band
-	elseif worn and worn.empty then
-		out.emptySlot = true
-		out.upgrade = value > 0
 	end
 	return out
 end
@@ -69,8 +69,6 @@ function Tooltip.Line(info)
 		local color = info.upgrade and "|cff40ff40" or (info.gain < 0 and "|cffff4040" or "|cffb0b0b0")
 		local sign = info.gain >= 0 and "+" or ""
 		right = string.format("%s%s%s|r   %s %s %s", color, sign, Fmt(info.gain), Fmt(info.value), info.gain >= 0 and ">" or "<", Fmt(info.wornValue))
-	elseif info.emptySlot then
-		right = string.format("|cff40ff40%s|r   %s", Fmt(info.value), L["(empty slot)"])
 	else
 		right = Fmt(info.value)
 	end
