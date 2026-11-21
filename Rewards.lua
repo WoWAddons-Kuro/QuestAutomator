@@ -309,11 +309,14 @@ end
 function Rewards.FitScore(c, player, settings)
 	local typeScore, typeName
 	local untrained = false
+	local lighter = false
 	if c.classID == Rules.CLASS_ARMOR then
 		if c.usable == false then return { score = 0, why = "unusable" } end
 		typeScore = Rules.ArmorScore(player.class, player.level, c.subclassID, c.equipLoc)
 		if not (Rules.NEUTRAL_SLOTS[c.equipLoc or ""] or c.subclassID == Rules.ARMOR.GENERIC) then
 			typeName = Rules.ArmorName(c.subclassID)
+			-- Wearable but not the class's best armour type at this level (Rules.LIGHTER).
+			lighter = typeScore > 0 and typeScore < 1
 		end
 	elseif Rules.IsWeapon(c.classID, c.subclassID) then
 		typeScore = Rules.WeaponScore(player.class, c.subclassID)
@@ -342,7 +345,7 @@ function Rewards.FitScore(c, player, settings)
 		if a.value ~= b.value then return a.value > b.value end
 		return a.key < b.key
 	end)
-	return { score = typeScore * (1 + statScore), typeScore = typeScore, statScore = statScore, parts = parts, typeName = typeName, untrained = untrained or nil }
+	return { score = typeScore * (1 + statScore), typeScore = typeScore, statScore = statScore, parts = parts, typeName = typeName, untrained = untrained or nil, lighter = lighter or nil }
 end
 
 --------------------------------------------------------------------------------
@@ -577,6 +580,30 @@ function Rewards.Evaluate(choices, settings, player)
 		end
 	end
 
+	-- Step 1b: lighter armour (cloth on a shaman, leather on a warrior) is wearable
+	-- but never competes with an upgrade of the class's best armour type: a level-1
+	-- shaman offered cloth and leather gloves has ONE upgrade, not two (which would
+	-- be tier 4 and open the pick window for a choice that is not ambiguous). Lighter
+	-- pieces stay in the running only when nothing of the best type is an upgrade.
+	local bestTypeUpgrade = false
+	for _, c in ipairs(upgrades) do
+		if not c.fit.lighter then bestTypeUpgrade = true break end
+	end
+	if bestTypeUpgrade then
+		local kept = {}
+		for _, c in ipairs(upgrades) do
+			if c.fit.lighter then
+				c.upgrade = false
+				c.fit.sidelined = true
+				c.fit.why = "lighter"
+				c.fit.score = 0
+			else
+				kept[#kept + 1] = c
+			end
+		end
+		upgrades = kept
+	end
+
 	-- Step 2: the tiers decide on the upgrade set. The best upgrade is always the
 	-- one the coin marks; the tier only says whether it is taken or shown.
 	if #upgrades > 0 then
@@ -671,6 +698,7 @@ function Rewards.ReasonText(reason, decision)
 	if reason == "notupgrade" then return L["no reward beats what you wear"] end
 	if reason == "sidegrade" then return L["no reward is clearly better than what you wear"] end
 	if reason == "nostats" then return L["no reward has stats your class wants"] end
+	if reason == "lighter" then return L["lighter than your armour class"] end
 	if reason == "recommend" then
 		local tier = decision and decision.tier
 		if tier == "tier1Action" then return L["a reward is hard to value; the suggested one glows"] end

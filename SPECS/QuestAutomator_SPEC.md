@@ -176,8 +176,12 @@ which item to glow in tier 4); they never veto. Settings UI shows the current cl
 
 - **Best-wearable** (armour): the piece's armour subclass equals `Rules.PreferredArmor(class, level)` — the class's
   *best* class at the current level (Warrior/Paladin: mail <40, plate ≥40; Hunter/Shaman: leather <40, mail ≥40;
-  Rogue/Druid leather; casters cloth). Lighter armour is **not** wearable for upgrade purposes. Neutral slots
-  (cloak, neck, ring, trinket, held-in-off-hand, shirt, tabard) are always wearable. Shields: War/Pal/Sham.
+  Rogue/Druid leather; casters cloth). **Lighter armour** (cloth on a shaman, leather on a warrior; `fit.lighter`)
+  competes as an upgrade **only when no best-wearable piece is an upgrade** (owner decision 2026-11-21, lenient
+  rule): if any best-type upgrade exists, lighter pieces are sidelined (`fit.why = "lighter"`) and do not count
+  toward tier 4, so cloth + leather gloves on a L1 shaman is ONE upgrade → tier 2 → auto. If only lighter armour
+  is on offer it goes through the tiers normally. Neutral slots (cloak, neck, ring, trinket, held-in-off-hand,
+  shirt, tabard) are always wearable and never lighter. Shields: War/Pal/Sham.
   The level-40 transition is handled by the existing `ARMOR_PROGRESSION` table.
 - **Best-wearable** (weapon): setting `weaponProficiency = "learnable" | "usable"` (default `learnable`).
   `learnable` = the subclass is in `Rules.WEAPONS[class]` (the class can train it at some trainer).
