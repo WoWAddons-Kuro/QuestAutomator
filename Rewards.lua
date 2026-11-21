@@ -587,7 +587,14 @@ function Rewards.Evaluate(choices, settings, player)
 	end
 	if best then return { index = best.index, choice = best, reason = "fit", pool = pool } end
 	if settings.fallbackToValue then
-		local decision = Rewards.ByValue(pool, "fallback")
+		-- Nothing is an upgrade: take the most valuable, but never a thing the class can
+		-- never equip while something wearable is offered (a gun for a druid). Only when
+		-- nothing at all is wearable is gold the whole story.
+		local wearable = {}
+		for _, c in ipairs(pool) do
+			if Rewards.Wearable(c, player) or (c.fit and c.fit.untrained) then wearable[#wearable + 1] = c end
+		end
+		local decision = Rewards.ByValue(#wearable > 0 and wearable or pool, "fallback")
 		if decision.index then
 			decision.pool = pool
 			return decision

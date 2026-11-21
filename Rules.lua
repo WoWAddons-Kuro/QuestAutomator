@@ -112,7 +112,7 @@ Rules.WEAPON_WEIGHT_KEYS = {
 }
 Rules.DPS_DEFAULT = 0.1
 do
-	local melee  = { WARRIOR = 4.0, ROGUE = 4.0, SHAMAN = 4.0, PALADIN = 4.0, HUNTER = 0.8 }
+	local melee  = { WARRIOR = 4.0, ROGUE = 4.0, SHAMAN = 4.0, PALADIN = 4.0, DRUID = 4.0, HUNTER = 0.8 }
 	local ranged = { HUNTER = 4.0, PRIEST = 2.5, MAGE = 2.0 }
 	local meleeSpeed = { PALADIN = -0.1, HUNTER = -0.1, WARRIOR = -0.1, ROGUE = 0.1, SHAMAN = 0.1 }
 	for class, profile in pairs(Rules.WEIGHTS) do
