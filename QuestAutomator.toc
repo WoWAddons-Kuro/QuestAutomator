@@ -27,6 +27,7 @@ Models\PrePickModel.lua
 TurnInResolver.lua
 Automation.lua
 Notice.lua
+Tooltip.lua
 Glow.lua
 XPBar.lua
 UI\State.lua

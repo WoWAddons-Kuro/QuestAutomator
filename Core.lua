@@ -184,6 +184,7 @@ NS.DEFAULT_SETTINGS = {
 	announce = true,           -- chat line for every quest accepted, handed in and reward chosen
 	minimap = true,            -- minimap button
 	xpBar = true,              -- completed quests' experience on the experience bar (XPBar.lua)
+	tooltipScore = true,       -- the reward scorer's verdict on every equipment tooltip (Tooltip.lua)
 	minimapAngle = 190,        -- where the minimap button sits, in degrees
 	minimapAngleAuto = true,   -- pick a free spot on the ring until the player drags the button
 	settingsVersion = NS.SETTINGS_VERSION,

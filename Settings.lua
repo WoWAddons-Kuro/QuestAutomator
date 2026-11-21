@@ -339,6 +339,7 @@ local function Build()
 		function(value) if NS.PrePick and NS.PrePick.SetUnlocked then NS.PrePick.SetUnlocked(value) end end), 26, -2, 20)
 	p:Add(Check(p, "announce", L["Chat messages for quests accepted, handed in and rewards chosen"], L["Print a chat line for every quest accepted, handed in and reward chosen."]), 26, -8, -20)
 	p:Add(Check(p, "xpBar", L["Completed quests on the experience bar"]), 26, -2)
+	p:Add(Check(p, "tooltipScore", L["Score line on equipment tooltips"], L["Adds a Quest Automator line to every equipment tooltip: the item's stat value for your class, the gain or loss against what you wear in that slot, and whether it counts as an upgrade."]), 26, -2)
 	p:Finish()
 
 	local layingOut = false
