@@ -8,7 +8,8 @@ UIState.DEFAULTS = {
 	prePickUI = true, prePickUnlocked = false,
 	tier1Action = "recommend", tier2Action = "auto", tier3Action = "auto",
 	tier4Action = "recommend", tier5Action = "auto",
-	ilvlBand = 2, weaponProficiency = "learnable", valueSource = "vendor",
+	-- upgradeBand: percent more stat value than the worn item a reward needs to count as an upgrade.
+	ilvlBand = 2, upgradeBand = 10, weaponProficiency = "learnable", valueSource = "vendor",
 }
 UIState.TIER_ACTIONS = { "recommend", "auto" }
 UIState.WEAPON_PROFICIENCIES = { "learnable", "usable" }
@@ -42,6 +43,7 @@ function UIState.Initialize()
 	if settings.weaponProficiency ~= "learnable" and settings.weaponProficiency ~= "usable" then settings.weaponProficiency = "learnable" end
 	if settings.valueSource ~= "vendor" and settings.valueSource ~= "auction" and settings.valueSource ~= "disenchant" then settings.valueSource = "vendor" end
 	settings.ilvlBand = math.max(0, math.min(10, math.floor(settings.ilvlBand)))
+	settings.upgradeBand = math.max(0, math.min(50, math.floor(settings.upgradeBand)))
 end
 
 NS.RegisterEvent("ADDON_LOADED", function(name)

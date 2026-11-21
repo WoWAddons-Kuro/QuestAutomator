@@ -300,18 +300,17 @@ local function Build()
 	local ui = NS.UIState
 	local shortNames = { auto = L["auto"], recommend = L["recommend"] }
 	local t = Section(L["Reward tiers (first match wins)"])
-	t:Add(Note(t), 36).text:SetText(ui.PlaceholderTip())
+	t:Add(Note(t), 28).text:SetText(L["Rewards the class cannot equip and rewards no better than what you wear are dropped first; the tiers decide what happens to the rest."])
 	local tierRows = {
-		{ "1", L["Hard to value (trinket, relic, Use or proc effect, not equipment)"], L["When any reward is a trinket, a relic, has a Use or chance-on-hit effect, or is not equipment at all. Recommend is the safe choice: the addon cannot weigh these."] },
-		{ "2", L["One reward is a clear upgrade"], L["Exactly one wearable reward has a higher item level than what you wear in that slot (by more than the sidegrade band)."] },
-		{ "3", L["One reward is a sidegrade"], L["Exactly one wearable reward is within the sidegrade band of what you wear in that slot."] },
-		{ "4", L["Two or more rewards are upgrades or sidegrades"], L["Several wearable rewards would improve or match your gear. Recommend lets you weigh them; the glow marks the one with the biggest item-level gain."] },
-		{ "5", L["Nothing wearable: most valuable"], L["No reward fits your class's best armour class or weapon skills: take the one worth the most."] },
+		{ "1", L["Hard to value (trinket, relic, or a weapon or trinket you have not allowed)"], L["When any reward is a trinket, a relic, has a Use or chance-on-hit effect, or is not equipment at all. Recommend is the safe choice: the addon cannot weigh these."] },
+		{ "2", L["One reward is a clear upgrade"], L["Exactly one reward adds more stat value than the upgrade margin over what you wear in that slot."] },
+		{ "4", L["Two or more rewards are upgrades"], L["Several rewards would improve your gear. Recommend lets you weigh them; the coin marks the one with the biggest gain."] },
+		{ "5", L["Nothing is an upgrade: most valuable wearable"], L["No reward beats what you wear: take the most valuable one you can equip (or the most valuable at all when nothing is wearable)."] },
 	}
 	for i, row in ipairs(tierRows) do
-		t:Add(RadioRow(t, "tier" .. row[1] .. "Action", ui.PlaceholderLabel(row[1] .. ". " .. row[2]), ui.TIER_ACTIONS, shortNames, ui.PlaceholderTip(row[3]), { wrap = true }), 52, -8)
+		t:Add(RadioRow(t, "tier" .. row[1] .. "Action", i .. ". " .. row[2], ui.TIER_ACTIONS, shortNames, row[3], { wrap = true }), 52, -8)
 	end
-	t:Add(Slider(t, "QuestAutomatorOptionsBand", "ilvlBand", 0, 10, function(v) return ui.PlaceholderLabel(L["Sidegrade band (item levels)"] .. ": " .. v) end), 58, -10)
+	t:Add(Slider(t, "QuestAutomatorOptionsBand", "upgradeBand", 0, 50, function(v) return L["Upgrade margin (percent)"] .. ": " .. v .. "%" end), 58, -10)
 	t:Finish()
 
 	-- Section: What counts as wearable / valuable
