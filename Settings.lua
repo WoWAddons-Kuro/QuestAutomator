@@ -341,6 +341,7 @@ local function Build()
 	p:Add(Check(p, "announce", L["Chat messages for quests accepted, handed in and rewards chosen"], L["Print a chat line for every quest accepted, handed in and reward chosen."]), 26, -8, -20)
 	p:Add(Check(p, "xpBar", L["Completed quests on the experience bar"]), 26, -2)
 	p:Add(Check(p, "tooltipScore", L["Score line on equipment tooltips"], L["Adds a Quest Automator line to every equipment tooltip: the item's stat value for your class, the gain or loss against what you wear in that slot, and whether it counts as an upgrade."]), 26, -2)
+	p:Add(Check(p, "ahScore", L["Upgrade bubble in the auction house list"], L["Equipment in the auction house browse list that beats what you wear gets a green +gain bubble at the right of its name (stat points, same scale as the tooltip line). Nothing is shown for sidegrades or downgrades."]), 26, -2)
 	p:Finish()
 
 	local layingOut = false

@@ -28,6 +28,10 @@ TurnInResolver.lua
 Automation.lua
 Notice.lua
 Tooltip.lua
+AuctionScore\AuctionScore.lua
+AuctionScore\AuctionScore_Forever.lua
+AuctionScore\AuctionScore_ClassicEra.lua
+AuctionScore\AuctionScore_Auctionator.lua
 Glow.lua
 XPBar.lua
 UI\State.lua

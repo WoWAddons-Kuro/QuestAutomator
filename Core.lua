@@ -184,6 +184,7 @@ NS.DEFAULT_SETTINGS = {
 	minimap = true,            -- minimap button
 	xpBar = true,              -- completed quests' experience on the experience bar (XPBar.lua)
 	tooltipScore = true,       -- the reward scorer's verdict on every equipment tooltip (Tooltip.lua)
+	ahScore = true,            -- "+1.2" upgrade bubble on equipment rows of the auction house browse list (AuctionScore/)
 	minimapAngle = 190,        -- where the minimap button sits, in degrees
 	minimapAngleAuto = true,   -- pick a free spot on the ring until the player drags the button
 	settingsVersion = NS.SETTINGS_VERSION,
@@ -429,6 +430,7 @@ function NS.DebugReport()
 	if NS.Glow and NS.Glow.DebugReport then NS.Glow.DebugReport() end
 	if NS.Notice and NS.Notice.DebugReport then NS.Notice.DebugReport() end
 	if NS.XPBar and NS.XPBar.DebugReport then NS.XPBar.DebugReport() end
+	if NS.AuctionScore and NS.AuctionScore.DebugReport then NS.AuctionScore.DebugReport() end
 	NS.Print("SavedVariables: account data from %s file, character data from %s file, character key %s, log entries %d",
 		tostring(NS.svSource), tostring(NS.charSource), tostring(NS.CharKey()), NS.db and #NS.db.log or 0)
 end
