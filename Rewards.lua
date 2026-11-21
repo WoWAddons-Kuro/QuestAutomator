@@ -527,17 +527,20 @@ function Rewards.Evaluate(choices, settings, player)
 	for _, c in ipairs(items) do
 		if not c.loaded then return { pending = true } end
 	end
-	-- A reward at or above the manual-quality threshold is the player's call.
-	local threshold = tonumber(settings.manualQuality)
-	if threshold and threshold >= 0 then
-		local notable
-		for _, c in ipairs(items) do
-			if (c.quality or 0) >= threshold and (not notable or (c.quality or 0) > (notable.quality or 0)) then notable = c end
-		end
-		if notable then return { reason = "quality", choice = notable, quality = notable.quality } end
-	end
-	if settings.rewardMode == "value" then return Rewards.ByValue(items, "value") end
 	local pool = items
+	-- The rare-or-better gate (settings.manualQuality): applied to the SUGGESTED item
+	-- only, after the pipeline has chosen it, so it can turn an auto pick into a
+	-- recommendation but never moves the coin onto something the class cannot use.
+	local threshold = tonumber(settings.manualQuality)
+	local function Gate(decision)
+		if not decision.index or not (threshold and threshold >= 0) then return decision end
+		local c = decision.choice
+		if c and (c.quality or 0) >= threshold then
+			return { choice = c, reason = "quality", quality = c.quality, tier = decision.tier, pool = decision.pool }
+		end
+		return decision
+	end
+	if settings.rewardMode == "value" then return Gate(Rewards.ByValue(items, "value")) end
 
 	-- Step 1: upgrades. Score, compare with the worn item, keep what adds value.
 	-- "Adds value" means at least settings.upgradeBand percent more than the worn
@@ -599,7 +602,7 @@ function Rewards.Evaluate(choices, settings, player)
 			tierKey, action = "tier4Action", TierAction(settings, "tier4Action", "recommend")
 		end
 		if action == "auto" then
-			return { index = best.index, choice = best, reason = "fit", tier = tierKey, pool = pool }
+			return Gate({ index = best.index, choice = best, reason = "fit", tier = tierKey, pool = pool })
 		end
 		return { choice = best, reason = "recommend", tier = tierKey, upgrades = #upgrades, pool = pool }
 	end
@@ -619,7 +622,7 @@ function Rewards.Evaluate(choices, settings, player)
 			if TierAction(settings, "tier5Action", "auto") == "recommend" then
 				return { choice = decision.choice, reason = "recommend", tier = "tier5Action", pool = pool }
 			end
-			return decision
+			return Gate(decision)
 		end
 	end
 	return { reason = "nofit", pool = pool }
