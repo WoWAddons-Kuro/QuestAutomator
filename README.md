@@ -15,7 +15,7 @@ For **WoW Forever** and **Classic Era / Anniversary / Hardcore**.
 3. Enable quest acceptance and turn-ins, and choose how rewards should be selected.
 
 **Minimap button:** left-click toggles the pre-picker; right-click opens settings.
-Hold **Shift** (configurable) while talking to an NPC to handle that conversation manually.
+Hold **any modifier key** (Shift, Ctrl or Alt) while talking to an NPC to handle that conversation manually.
 
 ## Features
 

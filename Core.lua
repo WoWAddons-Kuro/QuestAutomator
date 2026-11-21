@@ -180,7 +180,6 @@ NS.DEFAULT_SETTINGS = {
 	trinkets = false,          -- let the addon pick trinkets too; same rule
 	fallbackToValue = true,    -- fit mode: nothing usable -> take the most valuable reward
 	manualQuality = 3,         -- a reward of this quality or better is left to the player (-1 = never); 3 = Rare
-	modifier = "SHIFT",        -- key that pauses the automation while held: SHIFT, CTRL, ALT, NONE
 	announce = true,           -- chat line for every quest accepted, handed in and reward chosen
 	minimap = true,            -- minimap button
 	xpBar = true,              -- completed quests' experience on the experience bar (XPBar.lua)
@@ -199,7 +198,6 @@ function NS.OnSettingsChanged()
 end
 
 NS.REWARD_MODES = { "fit", "value", "manual" }
-NS.MODIFIERS = { "SHIFT", "CTRL", "ALT", "NONE" }
 NS.QUALITY_CHOICES = { -1, 1, 2, 3, 4, 5 } -- never, Common, Uncommon, Rare, Epic, Legendary (Enum.ItemQuality)
 
 -- Quality name coloured like the client does (ITEM_QUALITY<n>_DESC, ITEM_QUALITY_COLORS).
@@ -255,7 +253,7 @@ function NS.InitDB()
 	settings.settingsVersion = NS.SETTINGS_VERSION
 	if not Contains(NS.REWARD_MODES, settings.rewardMode) then settings.rewardMode = NS.DEFAULT_SETTINGS.rewardMode end
 	settings.weaponOffered, settings.trinketOffered = nil, nil -- removed in 0.2.0: a weapon or trinket offered always leaves the choice to the player
-	if not Contains(NS.MODIFIERS, settings.modifier) then settings.modifier = NS.DEFAULT_SETTINGS.modifier end
+	settings.modifier = nil -- removed: any modifier key (Shift, Ctrl or Alt) always pauses the conversation
 	if not Contains(NS.QUALITY_CHOICES, settings.manualQuality) then settings.manualQuality = NS.DEFAULT_SETTINGS.manualQuality end
 	db.settings = settings
 	db.ignoredNPCs = type(db.ignoredNPCs) == "table" and db.ignoredNPCs or {}     -- npcID -> name
@@ -343,13 +341,12 @@ end
 local function PrintHelp()
 	NS.Print(L["Commands:"])
 	NS.Print(L["/qam on|off - switch the automation on or off"])
-	NS.Print(L["/qam pause - pause for this session (or hold the modifier key while talking to an NPC)"])
+	NS.Print(L["/qam pause - pause for this session (or hold Shift, Ctrl or Alt while talking to an NPC)"])
 	NS.Print(L["/qam accept|turnin|trivial|repeatable|party|announce on|off - toggle one behaviour"])
 	NS.Print(L["/qam reward fit|value|manual - how the reward is chosen"])
 	NS.Print(L["/qam weapons on|off - let the addon pick weapons too"])
 	NS.Print(L["/qam trinkets on|off - let the addon pick trinkets too"])
 	NS.Print(L["/qam quality <1-5|off> - a reward of this quality or better is left to you (3 = rare)"])
-	NS.Print(L["/qam modifier shift|ctrl|alt|none - key that pauses the automation while held"])
 	NS.Print(L["/qam stats <stat> [<stat>...] | default - the stats this character wants, most important first"])
 	NS.Print(L["/qam ignore [npc|quest] - never automate the NPC or quest in front of you"])
 	NS.Print(L["/qam ignore list | unignore <id> - review or clear the ignore lists"])
@@ -458,7 +455,7 @@ function NS.PrintStatus()
 	NS.Print(L["Reward: %s | weapons: %s | trinkets: %s | nothing fits: %s"], NS.RewardModeName(s.rewardMode),
 		OnOff(s.weapons), OnOff(s.trinkets), s.fallbackToValue and L["take the most valuable"] or L["leave it to me"])
 	NS.Print(L["Left to me from quality: %s"], s.manualQuality >= 0 and NS.QualityName(s.manualQuality) or L["never"])
-	NS.Print(L["Pause key: %s | announcements: %s"], s.modifier, OnOff(s.announce))
+	NS.Print(L["Announcements: %s"], OnOff(s.announce))
 	if NS.Rules and NS.Rules.PrintProfile then NS.Rules.PrintProfile() end
 	if NS.Auto and NS.Auto.PrintContext then NS.Auto.PrintContext() end
 end
@@ -518,8 +515,6 @@ SlashCmdList["QUESTAUTOMATOR"] = function(msg)
 		end
 		NS.Print("%s: %s", L["Left to me from quality"], s.manualQuality >= 0 and NS.QualityName(s.manualQuality) or L["never"])
 		NS.OnSettingsChanged()
-	elseif cmd == "modifier" or cmd == "key" then
-		SetChoice("modifier", NS.MODIFIERS, rest:upper(), L["Pause key"])
 	elseif cmd == "stats" or cmd == "stat" then
 		NS.Rules.StatsCommand(rest)
 	elseif cmd == "ignore" then

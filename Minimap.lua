@@ -156,7 +156,7 @@ local function ShowTooltip(owner)
 	GameTooltip:AddLine(string.format(L["Automation: %s%s"], s.enabled and L["on"] or L["off"],
 		paused and (" (" .. L["paused for this session"] .. ")") or ""), 1, 1, 1)
 	GameTooltip:AddDoubleLine(L["Reward choice"], NS.RewardModeName(s.rewardMode), 1, 1, 1, 1, 1, 1)
-	GameTooltip:AddDoubleLine(L["Pause key"], s.modifier == "NONE" and L["none"] or s.modifier, 1, 1, 1, 1, 1, 1)
+	GameTooltip:AddDoubleLine(L["Pause key"], L["Shift / Ctrl / Alt"], 1, 1, 1, 1, 1, 1)
 	local quests = NS.PrePick and NS.PrePick.PendingQuests() or {}
 	if #quests > 0 then
 		GameTooltip:AddLine(string.format(L["Rewards to choose: %d"], #quests), 1, 0.82, 0)

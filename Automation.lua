@@ -55,12 +55,12 @@ Auto.state = state
 --------------------------------------------------------------------------------
 -- Player input and the NPC in front of the player.
 --------------------------------------------------------------------------------
-local MODIFIER_FN = { SHIFT = "IsShiftKeyDown", CTRL = "IsControlKeyDown", ALT = "IsAltKeyDown" }
-
+-- Any modifier key (Shift, Ctrl or Alt) held while talking to an NPC pauses the
+-- automation for that conversation. Always on; there is no setting for it.
 function Auto.ModifierDown()
-	local fn = MODIFIER_FN[NS.db and NS.db.settings.modifier or "SHIFT"]
-	if not fn then return false end
-	return NS.SafeBool(NS.Call(fn))
+	return NS.SafeBool(NS.Call("IsShiftKeyDown"))
+		or NS.SafeBool(NS.Call("IsControlKeyDown"))
+		or NS.SafeBool(NS.Call("IsAltKeyDown"))
 end
 
 function Auto.NPCGUID()

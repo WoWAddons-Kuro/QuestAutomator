@@ -268,6 +268,9 @@ local function Build()
 
 	-- Master switch directly under the intro.
 	Place(Check(content, "enabled", L["Enable the automation"], L["Master switch. Holding the pause key while talking to an NPC pauses everything for that conversation."]), -14)
+	local pauseNote = Note(content)
+	pauseNote.text:SetText(L["Note: ANY modifier key (Shift, Ctrl or Alt) held while talking to an NPC stops the auto-interact for that conversation."])
+	Place(pauseNote, -2)
 	Place(Check(content, "minimap", L["Minimap button"], L["Left-click: toggle the pick window. Right-click: settings. Drag to move."],
 		function(value) if NS.ShowMinimapButton then NS.ShowMinimapButton(value) end end), -2)
 
@@ -279,8 +282,6 @@ local function Build()
 	q:Add(Check(q, "confirmPartyQuests", L["Accept escorts started by the party"], L["Answer the confirmation pop-up that appears when a party member starts an escort quest."]), 26, -2)
 	q:Add(Check(q, "turnIn", L["Hand in quests"], L["Hand in every completed quest and take its reward as configured below. Quests that cost money are always left to you."]), 26, -8, -20)
 	q:Add(Check(q, "turnInRepeatable", L["Also hand in daily and repeatable quests"], L["Repeatable quests usually consume items from your bags; they are left to you unless this is on."]), 26, -2, 20)
-	q:Add(RadioRow(q, "modifier", L["Pause key"], NS.MODIFIERS, { SHIFT = "Shift", CTRL = "Ctrl", ALT = "Alt", NONE = L["none"] },
-		L["Hold this key while talking to an NPC to do that conversation by hand."], { labelWidth = 160 }), 20, -8, -20)
 	q:Finish()
 
 	-- Section: Reward tiers

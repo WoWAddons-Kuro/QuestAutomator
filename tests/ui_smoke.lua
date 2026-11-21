@@ -412,7 +412,6 @@ local function resetTurnIn(count)
 	NS.db.settings.rewardMode, NS.db.settings.manualQuality = 'value', -1
 	NS.db.settings.trinkets, NS.db.settings.weapons = true, true
 	NS.db.settings.turnInRepeatable = false
-	NS.db.settings.modifier = 'SHIFT'
 	NS.db.ignoredQuests[363], NS.db.ignoredNPCs[123] = nil, nil
 	IsShiftKeyDown = function() return false end
 	GetQuestMoneyToGet = function() return 0 end
