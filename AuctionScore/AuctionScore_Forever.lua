@@ -47,35 +47,40 @@ local function Paint(cell, itemKey, itemKeyInfo)
 end
 
 function provider.Install()
-	-- Stat-profile bubble left of the Browse search box (SPECS/STAT_PROFILES.md). The
-	-- search box frame path is not in our Blizzard reference extracts, so it is looked up
-	-- from a short candidate list rather than assumed; when none resolves the bubble is
-	-- skipped and /qam debug says so. Anchored RIGHT -> search box LEFT; Blizzard's layout
-	-- is not moved.
-	local function FindSearchBox()
+	-- Stat-profile bubble centred on the BOTTOM border of the Browse results list
+	-- (owner 2026-11-22: left of the search box collided with the category buttons).
+	-- The results frame path is not in our Blizzard reference extracts, so it is looked
+	-- up from a candidate list rather than assumed; the first that resolves wins and
+	-- /qam debug names it. Blizzard's layout is not moved - the bubble straddles the edge.
+	local function FindResultsList()
 		local ah = AuctionHouseFrame
 		if not ah then return nil end
+		local browse = ah.BrowseResultsFrame
 		local candidates = {
-			ah.SearchBar and ah.SearchBar.SearchBox,
-			ah.BrowseResultsFrame and ah.BrowseResultsFrame.SearchBar and ah.BrowseResultsFrame.SearchBar.SearchBox,
-			ah.SearchBox,
-			_G.AuctionHouseFrameSearchBox,
+			{ "BrowseResultsFrame.ItemList.ScrollBox", browse and browse.ItemList and browse.ItemList.ScrollBox },
+			{ "BrowseResultsFrame.ItemList", browse and browse.ItemList },
+			{ "BrowseResultsFrame", browse },
 		}
-		for _, f in ipairs(candidates) do
-			if type(f) == "table" and f.GetObjectType then return f end
+		for _, c in ipairs(candidates) do
+			local f = c[2]
+			if type(f) == "table" and f.GetObjectType then return f, c[1] end
 		end
 		return nil
 	end
 	local function PlaceSwitcher()
 		if not NS.ProfileSwitch then return end
-		local box = FindSearchBox()
-		if not box then AuctionScore.switcherAnchor = "search box not found"; return end
+		local list, which = FindResultsList()
+		if not list then AuctionScore.switcherAnchor = "results list not found"; return end
 		if not AuctionScore.switcher then
-			AuctionScore.switcher = NS.ProfileSwitch.Create(box:GetParent(), "bubble")
+			-- Parent to the AH frame itself so the bubble is never clipped by the list's
+			-- scroll region; it only ANCHORS to the list.
+			AuctionScore.switcher = NS.ProfileSwitch.Create(AuctionHouseFrame, "bubble")
+			AuctionScore.switcher:SetFrameLevel((list:GetFrameLevel() or 0) + 5)
 		end
 		AuctionScore.switcher:ClearAllPoints()
-		AuctionScore.switcher:SetPoint("RIGHT", box, "LEFT", -AuctionScore.BUBBLE_GAP - 4, 0)
-		AuctionScore.switcherAnchor = "left of search box"
+		-- CENTER on the bottom edge: half the bubble sits over the border, half below.
+		AuctionScore.switcher:SetPoint("CENTER", list, "BOTTOM", 0, 0)
+		AuctionScore.switcherAnchor = "bottom centre of " .. which
 		AuctionScore.switcher:Update()
 	end
 	if AuctionHouseFrame and AuctionHouseFrame.HookScript then AuctionHouseFrame:HookScript("OnShow", PlaceSwitcher) end
