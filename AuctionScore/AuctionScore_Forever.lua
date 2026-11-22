@@ -25,13 +25,16 @@ function provider.IsAvailable()
 		and type(hooksecurefunc) == "function"
 end
 
-local function Paint(cell, itemKey)
+local function Paint(cell, itemKey, itemKeyInfo)
 	if not itemKey or (itemKey.battlePetSpeciesID or 0) ~= 0 then
 		AuctionScore.Clear(cell, cell.Text, cell.ExtraInfo)
 		return
 	end
+	-- itemName is the suffixed display name ("Medicine Staff of Power"); the capture
+	-- table is keyed on it because the hovered tooltip link does not carry the suffix.
 	local result = AuctionScore.Decorate(cell, cell.Text, {
 		itemID = itemKey.itemID, itemLevel = itemKey.itemLevel, itemSuffix = itemKey.itemSuffix,
+		itemName = itemKeyInfo and itemKeyInfo.itemName or nil,
 	}, cell.ExtraInfo)
 	-- nil = item data still loading: ask again when it arrives (once per cell).
 	if result == nil and not cell.qamScorePending then
@@ -44,8 +47,8 @@ local function Paint(cell, itemKey)
 end
 
 function provider.Install()
-	hooksecurefunc(AuctionHouseTableCellItemDisplayMixin, "UpdateDisplay", function(cell, itemKey)
-		Paint(cell, itemKey)
+	hooksecurefunc(AuctionHouseTableCellItemDisplayMixin, "UpdateDisplay", function(cell, itemKey, itemKeyInfo)
+		Paint(cell, itemKey, itemKeyInfo)
 	end)
 	-- A cell that showed a bubble and is now blanked (ClearDisplay) must lose it too.
 	hooksecurefunc(AuctionHouseTableCellItemDisplayMixin, "ClearDisplay", function(cell)
@@ -56,7 +59,8 @@ function provider.Install()
 	hooksecurefunc(AuctionHouseTableCellItemDisplayMixin, "OnEvent", function(cell, event, itemID)
 		if event == "GET_ITEM_INFO_RECEIVED" and cell.qamScorePending and cell.rowData and cell.rowData.itemKey
 			and cell.rowData.itemKey.itemID == itemID then
-			Paint(cell, cell.rowData.itemKey)
+			local info = C_AuctionHouse.GetItemKeyInfo and C_AuctionHouse.GetItemKeyInfo(cell.rowData.itemKey) or nil
+			Paint(cell, cell.rowData.itemKey, info)
 		end
 	end)
 	return true

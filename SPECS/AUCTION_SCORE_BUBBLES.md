@@ -40,11 +40,18 @@ So a suffixed row is handled in two steps:
 | Not yet hovered | **yellow** `+12.4` (`AuctionScore.ESTIMATE`) | base item: DPS / armour, no suffix stats |
 | Hovered once this session | **green** `+19.5` (`AuctionScore.EXACT`) | the tooltip the player opened |
 
-Capture: `TooltipDataProcessor` post-call on every item tooltip (`AuctionScore.InstallCapture`). When
-the tooltip's link carries a suffix (`AuctionScore.LinkSuffix`, field 7 of the item string) the stats
-are parsed from that tooltip and stored in a **session-only** capture table keyed
-`itemID:itemLevel:suffix`; every live cell showing that key is re-Decorated (`RepaintKey`). Never
-persisted - hovering rebuilds it. `result.estimate` carries the state to `Place`.
+Capture: `TooltipDataProcessor` post-call on every item tooltip (`AuctionScore.InstallCapture`). The
+hovered tooltip's link does **not** carry the browse `itemSuffix` (on Forever the roll is a bonus ID,
+field 15, e.g. `item:4570::::::::12:1489:::1:12744`), so the link cannot be matched to a row. Instead
+the live suffixed browse cell **under the mouse** is the listing being described
+(`HoveredSuffixedCell`; `Decorate` parks `itemRef` on every painted cell). Its stats are parsed from
+the open tooltip and stored under the **durable capture key** `itemID:itemLevel:Display Name`
+(`AuctionScore.CaptureKey`) - the display name ("Medicine Staff of Power") is the one thing the row
+(`ItemKeyInfo.itemName`) and the tooltip title agree on; `itemID` disambiguates same-named greens
+(owner 2026-11-22). The store is **account SavedVariables** `QuestAutomatorDB.suffixStats`: a listing
+swiped once is exact on every later search and session. A hover whose stats differ from the stored
+row overwrites it (the tooltip is the truth); identical = no-op. Every live cell with that key is
+re-Decorated (`RepaintKey`). `result.estimate` carries the state to `Place`.
 
 ## Structure
 

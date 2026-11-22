@@ -76,8 +76,9 @@ end
 -- The capture DB is never persisted; it is rebuilt by hovering.
 --------------------------------------------------------------------------------
 local cache = {}        -- key -> result table or false (not equipment / cannot wear)
-local captured = {}     -- "itemID:itemLevel:suffix" -> stats table, learned from hovered tooltips
+local captured = {}     -- fallback capture table before NS.db exists; see Captured()
 local liveCells = setmetatable({}, { __mode = "k" }) -- cell -> true, for repaint after a capture
+local Captured, SameStats -- forward declarations (defined below the capture section)
 
 function AuctionScore.Invalidate()
 	cache = {}
@@ -88,6 +89,19 @@ local function Key(itemID, itemLevel, itemSuffix, link)
 	return tostring(itemID) .. ":" .. tostring(itemLevel or 0) .. ":" .. tostring(itemSuffix or 0)
 end
 
+-- The DURABLE capture key: "itemID:itemLevel:Display Name". The display name
+-- ("Medicine Staff of Power") carries the roll and is the one thing the browse row
+-- (ItemKeyInfo.itemName) and the hovered tooltip (its title line) agree on; the
+-- itemSuffix number never appears in the tooltip's link. itemID disambiguates the few
+-- vanilla greens that share a name across different base items (owner 2026-11-22).
+-- nil when no name is known yet (the row's ItemKeyInfo has not loaded).
+function CaptureKey(ref, nameOverride)
+	local name = nameOverride or (ref and ref.itemName)
+	if not ref or not ref.itemID or not name or name == "" then return nil end
+	return tostring(ref.itemID) .. ":" .. tostring(ref.itemLevel or 0) .. ":" .. name
+end
+AuctionScore.CaptureKey = CaptureKey
+
 -- Stats of the listing, plus whether they are an ESTIMATE (base item standing in for an
 -- unresolved suffix). nil = item data not loaded yet.
 --   link                     -> that item exactly
@@ -95,11 +109,11 @@ end
 --   suffixed, not captured   -> the bare base item (estimate)
 --   unsuffixed, itemLevel>0  -> the keyed data tooltip (exact; the client resolves non-random keys)
 --   otherwise                -> the bare itemID link
-local function ListingStats(itemID, itemLevel, itemSuffix, link)
+local function ListingStats(itemID, itemLevel, itemSuffix, link, itemName)
 	if link then return Rewards.WornItemStats(link), false end
 	local suffixed = (itemSuffix or 0) ~= 0
 	if suffixed then
-		local hit = captured[Key(itemID, itemLevel, itemSuffix)]
+		local hit = Captured()[CaptureKey({ itemID = itemID, itemLevel = itemLevel, itemName = itemName })]
 		if hit then return hit, false end
 	elseif (itemLevel or 0) ~= 0 then
 		local data = NS.Call("C_TooltipInfo.GetItemKey", itemID, itemLevel, 0)
@@ -160,22 +174,46 @@ function AuctionScore.CaptureFromLink(link, tooltipData)
 	-- Guard: the tooltip must be describing the same base item as the row.
 	local linkItemID = NS.SafeNumber(NS.Call("C_Item.GetItemInfoInstant", link))
 	if linkItemID ~= ref.itemID then return nil end
-	local key = Key(ref.itemID, ref.itemLevel, ref.itemSuffix)
-	if captured[key] then return nil end
+	-- The tooltip's own title is the suffixed display name; it must agree with the row's.
+	local tipName = type(tooltipData) == "table" and type(tooltipData.lines) == "table" and tooltipData.lines[1]
+		and NS.SafeString(tooltipData.lines[1].leftText) or nil
+	if tipName and ref.itemName and tipName ~= ref.itemName then return nil end
+	local key = CaptureKey(ref, tipName)
+	if not key then return nil end
 	-- The tooltip that is open has the suffix lines; parse it first, API second.
 	local stats = (type(tooltipData) == "table" and Rewards.StatsFromTooltipData(tooltipData)) or Rewards.WornItemStats(link)
 	if not stats or AuctionScore.IsGroupSummary(tooltipData) then return nil end
-	captured[key] = stats
-	cache[key] = nil -- the estimate for this key is stale
+	-- Durable: already known and identical -> nothing to do. Different (the client
+	-- changed the roll, or a stale earlier read) -> the tooltip wins.
+	local known = Captured()[key]
+	if known and SameStats(known, stats) then return nil end
+	Captured()[key] = stats
+	cache[Key(ref.itemID, ref.itemLevel, ref.itemSuffix)] = nil -- any score built on the old stats is stale
 	AuctionScore.RepaintKey(key)
 	return key
+end
+
+-- The capture table lives in the account SavedVariables (NS.db.suffixStats) so a
+-- listing swiped once shows its exact score on every later search and session.
+function Captured()
+	if NS.db then
+		NS.db.suffixStats = NS.db.suffixStats or {}
+		return NS.db.suffixStats
+	end
+	return captured -- before InitDB (tests): session-only
+end
+
+function SameStats(a, b)
+	for k, v in pairs(a) do if b[k] ~= v then return false end end
+	for k, v in pairs(b) do if a[k] ~= v then return false end end
+	return true
 end
 
 -- Re-Decorate every live cell that shows `key`.
 function AuctionScore.RepaintKey(key)
 	for cell in pairs(liveCells) do
 		local ref = cell.qamScoreRef
-		if ref and cell:IsShown() and Key(ref.itemID, ref.itemLevel, ref.itemSuffix, ref.link) == key then
+		if ref and cell:IsShown() and CaptureKey(ref) == key then
 			AuctionScore.Decorate(cell, cell.qamScoreText, ref, cell.qamScoreNeighbour)
 		end
 	end
@@ -183,7 +221,7 @@ end
 
 function AuctionScore.CapturedCount()
 	local n = 0
-	for _ in pairs(captured) do n = n + 1 end
+	for _ in pairs(Captured()) do n = n + 1 end
 	return n
 end
 
@@ -207,7 +245,7 @@ function AuctionScore.InstallCapture()
 	end
 end
 
-function AuctionScore.Score(itemID, itemLevel, itemSuffix, link)
+function AuctionScore.Score(itemID, itemLevel, itemSuffix, link, itemName)
 	itemID = NS.SafeNumber(itemID)
 	if not itemID and link then itemID = NS.SafeNumber(NS.Call("C_Item.GetItemInfoInstant", link)) end
 	if not itemID then return false end
@@ -222,7 +260,7 @@ function AuctionScore.Score(itemID, itemLevel, itemSuffix, link)
 		cache[key] = false
 		return false
 	end
-	local stats, estimate = ListingStats(itemID, itemLevel, itemSuffix, link)
+	local stats, estimate = ListingStats(itemID, itemLevel, itemSuffix, link, itemName)
 	if not stats then return nil end -- pending: not cached, so the next paint retries
 
 	local player = Rules.Player()
@@ -343,7 +381,7 @@ function AuctionScore.Decorate(cell, text, itemRef, neighbour)
 		AuctionScore.Clear(cell, text, neighbour)
 		return false
 	end
-	local ok, result = pcall(AuctionScore.Score, itemRef.itemID, itemRef.itemLevel, itemRef.itemSuffix, itemRef.link)
+	local ok, result = pcall(AuctionScore.Score, itemRef.itemID, itemRef.itemLevel, itemRef.itemSuffix, itemRef.link, itemRef.itemName)
 	if not ok then
 		NS.WarnOnce("ahscore", tostring(result))
 		AuctionScore.Clear(cell, text, neighbour)

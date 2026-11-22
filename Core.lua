@@ -259,6 +259,9 @@ function NS.InitDB()
 	db.ignoredNPCs = type(db.ignoredNPCs) == "table" and db.ignoredNPCs or {}     -- npcID -> name
 	db.ignoredQuests = type(db.ignoredQuests) == "table" and db.ignoredQuests or {} -- questID -> title
 	db.log = type(db.log) == "table" and db.log or {}
+	-- Stats of random-suffix auction listings learned from hovered tooltips (AuctionScore):
+	-- "itemID:itemLevel:suffix" -> { STAT_KEY = amount, ... }. Item data, not state: account-wide, kept.
+	db.suffixStats = type(db.suffixStats) == "table" and db.suffixStats or {}
 	NS.db = db
 
 	local cdb = LoadedTable(QuestAutomatorCharDB) or {}
