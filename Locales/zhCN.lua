@@ -309,7 +309,7 @@ L["Left-click: toggle the pick window. Right-click: settings. Drag to move."] = 
 L["Pre-select your reward."] = "预先选择你的奖励。"
 L["Saved reward cannot be matched; original reward rules apply."] = "无法匹配已保存的奖励；使用原版奖励规则。"
 L["(pick unavailable)"] = "（预选不可用）"
-L["Pre-pick for %s: %s. Used at hand-in when automation is allowed."] = "%s 的预选：%s。允许自动化时会在交付时选择。"
+L["Pre-pick for %s: %s."] = "%s 的预选：%s。"
 L["Show reward choices on accept. A saved selection is used at hand-in when automation is allowed; turning off this display does not clear saved picks."] = "接受任务时显示奖励。允许自动化时会在交付时使用预选；关闭此显示不会清除已保存的预选。"
 L["Uses original quest automation. Valid pre-picks override automatic reward recommendations. Controls marked Not implemented remain saved-only placeholders."] = "使用原版任务自动化。有效预选优先于自动推荐。标为尚未实现的控件仍仅保存状态。"
 

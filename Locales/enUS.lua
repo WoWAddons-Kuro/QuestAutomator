@@ -303,7 +303,7 @@ L["Left-click: toggle the pick window. Right-click: settings. Drag to move."] = 
 L["Pre-select your reward."] = "Pre-select your reward."
 L["Saved reward cannot be matched; original reward rules apply."] = "Saved reward cannot be matched; original reward rules apply."
 L["(pick unavailable)"] = "(pick unavailable)"
-L["Pre-pick for %s: %s. Used at hand-in when automation is allowed."] = "Pre-pick for %s: %s. Used at hand-in when automation is allowed."
+L["Pre-pick for %s: %s."] = "Pre-pick for %s: %s."
 L["Show reward choices on accept. A saved selection is used at hand-in when automation is allowed; turning off this display does not clear saved picks."] = "Show reward choices on accept. A saved selection is used at hand-in when automation is allowed; turning off this display does not clear saved picks."
 L["Uses original quest automation. Valid pre-picks override automatic reward recommendations. Controls marked Not implemented remain saved-only placeholders."] = "Uses original quest automation. Valid pre-picks override automatic reward recommendations. Controls marked Not implemented remain saved-only placeholders."
 

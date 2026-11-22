@@ -640,7 +640,7 @@ function PrePick.Choose(c)
 		NS.Print(L["Pre-pick cleared for %s."], Data.QuestTitle(state.questID) or state.questID)
 	else
 		if not PrePick.Set(state.questID, c.itemID) then return end
-		NS.Print(L["Pre-pick for %s: %s. Used at hand-in when automation is allowed."], Data.QuestTitle(state.questID) or state.questID, Rewards.ChoiceLabel(c))
+		NS.Print(L["Pre-pick for %s: %s."], Data.QuestTitle(state.questID) or state.questID, Rewards.ChoiceLabel(c))
 	end
 	state.decision = Data.Evaluate(state.choices, NS.db.settings, Rules.Player(), state.questID)
 	PrePick.Render()

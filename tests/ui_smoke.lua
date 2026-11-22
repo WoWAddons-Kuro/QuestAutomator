@@ -265,7 +265,7 @@ local firstChoice = NS.PrePick.state.choices[1]
 NS.PrePick.Choose(firstChoice)
 assert(NS.PrePick.Get(101) == firstChoice.itemID)
 assert(QuestAutomatorPrePickFrame:IsShown())
-assert(messages[#messages]:find(string.format(NS.L["Pre-pick for %s: %s. Used at hand-in when automation is allowed."], "First quest", NS.Rewards.ChoiceLabel(firstChoice)), 1, true))
+assert(messages[#messages]:find(string.format(NS.L["Pre-pick for %s: %s."], "First quest", NS.Rewards.ChoiceLabel(firstChoice)), 1, true))
 assert(QuestAutomatorPrePickFrame.Notice.text == NS.L["Pre-select your reward."])
 assert(NS.PrePick.state.decision.reason == 'prepick')
 local switched = false
