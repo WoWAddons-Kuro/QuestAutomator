@@ -128,26 +128,42 @@ end
 
 --------------------------------------------------------------------------------
 -- Capture: learn suffixed stats from any item tooltip the player opens.
--- item link: item:itemID:enchant:gem1:gem2:gem3:gem4:suffixID:... - the suffix is
--- field 7. Classic-style links may carry it negative; browse keys are positive.
+--
+-- The hovered tooltip's hyperlink does NOT carry the browse key's itemSuffix. On
+-- Forever 1.60.1 the roll is encoded as a bonus ID (item:4570::::::::12:1489:::1:12744)
+-- - field 7 (suffix) is empty and field 15 is a per-variant bonus ID that is NOT the
+-- 143xx suffix the browse list keys on (verified 2026-11-22, every Birchwood Maul "of X").
+-- So the link cannot be matched back to a row by parsing. Instead the ROW is matched:
+-- Decorate parked itemRef on every painted cell, and the cell under the mouse when the
+-- tooltip fires IS the listing being described. Its browse key gets the tooltip's stats.
 --------------------------------------------------------------------------------
-local function LinkSuffix(link)
-	local suffix = link and link:match("item:%d+:[^:]*:[^:]*:[^:]*:[^:]*:[^:]*:(%-?%d+)")
-	suffix = tonumber(suffix)
-	return suffix and suffix ~= 0 and math.abs(suffix) or nil
-end
-AuctionScore.LinkSuffix = LinkSuffix
 
--- Called for every item tooltip. Returns the capture key when something new was learned.
+-- The live, suffixed browse cell the mouse is over, or nil.
+local function HoveredSuffixedCell()
+	for cell in pairs(liveCells) do
+		local ref = cell.qamScoreRef
+		if ref and not ref.link and (ref.itemSuffix or 0) ~= 0 and cell:IsVisible() then
+			-- the mouse is over the row (cell's parent line) or the cell itself
+			local row = cell:GetParent()
+			if cell:IsMouseOver() or (row and row.IsMouseOver and row:IsMouseOver()) then return cell, ref end
+		end
+	end
+	return nil
+end
+
+-- Called for every item tooltip. Learns the hovered suffixed row's stats; returns the key.
 function AuctionScore.CaptureFromLink(link, tooltipData)
 	link = NS.SafeString(link)
-	local suffix = LinkSuffix(link)
-	if not suffix then return nil end
-	local itemID = NS.SafeNumber(NS.Call("C_Item.GetItemInfoInstant", link))
-	local _, _, _, itemLevel = NS.Call("C_Item.GetItemInfo", link)
-	itemLevel = NS.SafeNumber(itemLevel)
-	if not itemID or not itemLevel then return nil end
-	local key = Key(itemID, itemLevel, suffix)
+	if not link then return nil end
+	local cell, ref = HoveredSuffixedCell()
+	if not cell then return nil end
+	-- Guard: the tooltip must be describing the same base item as the row.
+	local linkItemID = NS.SafeNumber(NS.Call("C_Item.GetItemInfoInstant", link))
+	if linkItemID ~= ref.itemID then return nil end
+	local key = Key(ref.itemID, ref.itemLevel, ref.itemSuffix)
+	if NS.db.settings.ahTrace then
+		NS.Print("ahtrace CAPTURE row key %s <- %s (known=%s)", key, link:match("|H(item:[^|]+)|h") or link, tostring(captured[key] ~= nil))
+	end
 	if captured[key] then return nil end
 	-- The tooltip that is open has the suffix lines; parse it first, API second.
 	local stats = (type(tooltipData) == "table" and Rewards.StatsFromTooltipData(tooltipData)) or Rewards.WornItemStats(link)
@@ -211,6 +227,9 @@ function AuctionScore.Score(itemID, itemLevel, itemSuffix, link)
 	end
 	local stats, estimate = ListingStats(itemID, itemLevel, itemSuffix, link)
 	if not stats then return nil end -- pending: not cached, so the next paint retries
+	if NS.db and NS.db.settings and NS.db.settings.ahTrace and (itemSuffix or 0) ~= 0 then
+		NS.Print("ahtrace SCORE key %s estimate=%s", key, tostring(estimate))
+	end
 
 	local player = Rules.Player()
 	local c = { classID = classID, subclassID = subclassID, equipLoc = equipLoc, usable = true, stats = stats }
