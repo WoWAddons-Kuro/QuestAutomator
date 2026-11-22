@@ -17,12 +17,34 @@ name column, with the stat-point gain:
 - **Shown only when gain > 0.1** (`AuctionScore.MIN_DELTA`). Sidegrades, downgrades, unwearable
   items, non-equipment, battle pets: nothing is drawn and Blizzard's layout is untouched.
 - Always on while `settings.ahScore` is true (default on; checkbox under *Pre-pick and feedback*).
-- Listing identity is the auction **item key** `{ itemID, itemLevel, itemSuffix }` so "of the
-  Monkey" gets its own stats (`C_TooltipInfo.GetItemKey`), not the bare itemID's. A hyperlink is
-  accepted instead when the UI has one (Era).
+- Listing identity is the auction **item key** `{ itemID, itemLevel, itemSuffix }`. A hyperlink is
+  accepted instead when the UI has one (Era, Forever's per-auction item list).
 - Results are cached per key; the cache is dropped on `PLAYER_EQUIPMENT_CHANGED`,
   `PLAYER_LEVEL_UP`, `SKILL_LINES_CHANGED`. Item data not loaded yet => not cached, repainted on
   `GET_ITEM_INFO_RECEIVED`.
+
+### Random-suffix listings ("of the Monkey") - estimate, then capture (owner 2026-11-22)
+
+From addon code the Forever client will **not** resolve a random-suffix roll for a browse key.
+`C_TooltipInfo.GetItemKey(itemID, itemLevel, itemSuffix, requiredLevel)` and a scanning
+`GameTooltip:SetItemKey(...)` both return the group placeholder - *"Items in this group may vary in
+stats and appearance. Check the auction's tooltip before buying."* - with weapon DPS only and no stat
+lines. Verified 1.60.1 (71037) for every suffix of five weapon groups; `requiredLevel` was present
+and correct and changed nothing. Blizzard's own hover tooltip, from secure code, gets the full item.
+(The bare-itemID hyperlink `item:ID::::::suffix` likewise resolves to the base item.)
+
+So a suffixed row is handled in two steps:
+
+| State | Bubble | Source |
+|---|---|---|
+| Not yet hovered | **yellow** `+12.4` (`AuctionScore.ESTIMATE`) | base item: DPS / armour, no suffix stats |
+| Hovered once this session | **green** `+19.5` (`AuctionScore.EXACT`) | the tooltip the player opened |
+
+Capture: `TooltipDataProcessor` post-call on every item tooltip (`AuctionScore.InstallCapture`). When
+the tooltip's link carries a suffix (`AuctionScore.LinkSuffix`, field 7 of the item string) the stats
+are parsed from that tooltip and stored in a **session-only** capture table keyed
+`itemID:itemLevel:suffix`; every live cell showing that key is re-Decorated (`RepaintKey`). Never
+persisted - hovering rebuilds it. `result.estimate` carries the state to `Place`.
 
 ## Structure
 
@@ -59,8 +81,8 @@ to the bubble's `LEFT` (saving the original anchor once per cell), and shifts `n
 
 - [ ] Forever: open AH, browse Armor; upgrades show `+N.N`, nothing on sidegrades; name truncation
       still ellipsises left of the bubble; scroll fast - no stale bubbles on recycled rows.
-- [ ] `C_TooltipInfo.GetItemKey` returns stats for a suffixed listing (compare bubble vs. the
-      tooltip line on hover). If it returns nothing on Forever, `ListingStats` falls back to the bare
-      itemID link - note it here.
+- [ ] Suffixed rows ("Medicine Staff of X") start YELLOW with the base-item gain; hovering one turns
+      that row GREEN with the exact gain and the number matches the tooltip's `Quest Automator` line.
+      Scroll away and back: the green value is remembered. `/qam debug` counts captures.
 - [ ] Toggle the setting off: bubbles disappear on next repaint.
 - [ ] `/qam debug` lists `AuctionScore forever: installed`, Era/Auctionator `not installed`.

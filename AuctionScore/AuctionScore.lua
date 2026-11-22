@@ -35,9 +35,12 @@ AuctionScore.MIN_DELTA = 0.1          -- a gain must exceed this to get a bubble
 AuctionScore.BUBBLE_HEIGHT = 14
 AuctionScore.BUBBLE_PAD = 4           -- horizontal padding inside the bubble, each side
 AuctionScore.BUBBLE_GAP = 3           -- space between the name text and the bubble
-AuctionScore.COLOR_TEXT = { 0.25, 1, 0.25 }
-AuctionScore.COLOR_BG = { 0.05, 0.25, 0.05, 0.9 }
-AuctionScore.COLOR_BORDER = { 0.25, 0.8, 0.25, 0.9 }
+-- Two palettes: EXACT (green) when the stats are the listing's own; ESTIMATE
+-- (yellow) when a suffixed listing is scored on its base item until hovered.
+AuctionScore.EXACT    = { text = { 0.25, 1, 0.25 },  bg = { 0.05, 0.25, 0.05, 0.9 }, border = { 0.25, 0.8, 0.25, 0.9 } }
+AuctionScore.ESTIMATE = { text = { 1, 0.85, 0.3 },   bg = { 0.28, 0.22, 0.04, 0.9 }, border = { 0.85, 0.7, 0.25, 0.9 } }
+-- Kept for anything outside that read the old names.
+AuctionScore.COLOR_TEXT, AuctionScore.COLOR_BG, AuctionScore.COLOR_BORDER = AuctionScore.EXACT.text, AuctionScore.EXACT.bg, AuctionScore.EXACT.border
 
 --------------------------------------------------------------------------------
 -- Formatting: one decimal, always signed, nil when not worth showing.
@@ -56,9 +59,25 @@ end
 -- passed instead when the UI has one (Era's GetAuctionItemLink).
 --
 -- Result: nil while item data is still loading (the caller may retry on
--- GET_ITEM_INFO_RECEIVED), else { wearable, value, wornValue, gain, upgrade }.
+-- GET_ITEM_INFO_RECEIVED), else { wearable, value, wornValue, gain, upgrade, estimate }.
+--
+-- SUFFIXED LISTINGS (owner design 2026-11-22). From addon code the client will NOT
+-- resolve a random-suffix roll for a browse key: C_TooltipInfo.GetItemKey and a
+-- scanning GameTooltip:SetItemKey both return the group placeholder ("Items in this
+-- group may vary in stats and appearance") with DPS only - verified for every suffix
+-- of five weapon groups on Forever 1.60.1 (71037). Blizzard's own hover tooltip,
+-- called from secure code, gets the full item. So:
+--   1. A suffixed row is first scored on its BASE item (bare itemID: weapon DPS,
+--      armour value, no suffix stats) and drawn as a YELLOW "estimate" bubble.
+--   2. Every item tooltip the player opens is watched (TooltipDataProcessor). When
+--      one carries a suffixed link, its stats are parsed and kept in a session
+--      capture DB keyed by itemID:itemLevel:suffix, and rows showing that key are
+--      repainted with the exact GREEN bubble.
+-- The capture DB is never persisted; it is rebuilt by hovering.
 --------------------------------------------------------------------------------
 local cache = {}        -- key -> result table or false (not equipment / cannot wear)
+local captured = {}     -- "itemID:itemLevel:suffix" -> stats table, learned from hovered tooltips
+local liveCells = setmetatable({}, { __mode = "k" }) -- cell -> true, for repaint after a capture
 
 function AuctionScore.Invalidate()
 	cache = {}
@@ -69,66 +88,28 @@ local function Key(itemID, itemLevel, itemSuffix, link)
 	return tostring(itemID) .. ":" .. tostring(itemLevel or 0) .. ":" .. tostring(itemSuffix or 0)
 end
 
--- Stats of the listing. A suffixed listing ("Medicine Staff of Power") cannot be read
--- through the DATA tooltip API: C_TooltipInfo.GetItemKey(itemID, itemLevel, itemSuffix,
--- requiredLevel) returns the browse GROUP summary ("Items in this group may vary in
--- stats and appearance") with DPS only and no stat lines, even with requiredLevel
--- supplied (verified on Forever 1.60.1 build 71037, 2026-11-22: every suffix of every
--- weapon group). A bare-itemID link carries no suffix at all. The one path that does
--- resolve the roll is the GameTooltip WIDGET: GameTooltip:SetItemKey(itemID, itemLevel,
--- itemSuffix, requiredLevel) - which is exactly what Blizzard's hover tooltip calls
--- (AuctionHouseUtil.SetAuctionHouseTooltip). So a hidden scanning tooltip is fed the
--- key and its lines are parsed. A suffixed listing with no resolvable lines returns
--- nil = pending and is never cached.
-local scanTip
-local function ScanTooltip()
-	if scanTip then return scanTip end
-	scanTip = CreateFrame("GameTooltip", "QuestAutomatorAuctionScanTooltip", UIParent, "GameTooltipTemplate")
-	scanTip:SetOwner(UIParent, "ANCHOR_NONE")
-	return scanTip
-end
-
--- Lines of the scanning tooltip as a TooltipData-shaped table { lines = { {leftText, rightText}... } },
--- so Rewards.StatsFromTooltipData can read them unchanged.
-local function ScanTooltipLines(tip)
-	local name = tip:GetName()
-	local data = { lines = {} }
-	for i = 1, tip:NumLines() do
-		local left, right = _G[name .. "TextLeft" .. i], _G[name .. "TextRight" .. i]
-		data.lines[#data.lines + 1] = { leftText = left and left:GetText(), rightText = right and right:GetText() }
-	end
-	return data
-end
-
-function AuctionScore.SuffixedListingStats(itemID, itemLevel, itemSuffix)
-	if type(GameTooltip) ~= "table" or type(GameTooltip.SetItemKey) ~= "function" then return nil end
-	local itemKey = { itemID = itemID, itemLevel = itemLevel or 0, itemSuffix = itemSuffix or 0, battlePetSpeciesID = 0 }
-	local requiredLevel = NS.SafeNumber(NS.Call("C_AuctionHouse.GetItemKeyRequiredLevel", itemKey))
-	local tip = ScanTooltip()
-	tip:ClearLines()
-	tip:SetOwner(UIParent, "ANCHOR_NONE")
-	local ok = pcall(tip.SetItemKey, tip, itemID, itemLevel or 0, itemSuffix or 0, requiredLevel)
-	if not ok or tip:NumLines() == 0 then return nil end
-	local data = ScanTooltipLines(tip)
-	if AuctionScore.IsGroupSummary(data) then return nil end
-	return Rewards.StatsFromTooltipData(data)
-end
-
+-- Stats of the listing, plus whether they are an ESTIMATE (base item standing in for an
+-- unresolved suffix). nil = item data not loaded yet.
+--   link                     -> that item exactly
+--   suffixed, captured       -> the captured stats (exact)
+--   suffixed, not captured   -> the bare base item (estimate)
+--   unsuffixed, itemLevel>0  -> the keyed data tooltip (exact; the client resolves non-random keys)
+--   otherwise                -> the bare itemID link
 local function ListingStats(itemID, itemLevel, itemSuffix, link)
-	if link then return Rewards.WornItemStats(link) end
+	if link then return Rewards.WornItemStats(link), false end
 	local suffixed = (itemSuffix or 0) ~= 0
 	if suffixed then
-		return AuctionScore.SuffixedListingStats(itemID, itemLevel, itemSuffix) -- nil = pending, never the base item
-	end
-	if (itemLevel or 0) ~= 0 then
+		local hit = captured[Key(itemID, itemLevel, itemSuffix)]
+		if hit then return hit, false end
+	elseif (itemLevel or 0) ~= 0 then
 		local data = NS.Call("C_TooltipInfo.GetItemKey", itemID, itemLevel, 0)
 		local stats = data and Rewards.StatsFromTooltipData(data)
-		if stats then return stats end
+		if stats and not AuctionScore.IsGroupSummary(data) then return stats, false end
 	end
 	local _, infoLink = NS.Call("C_Item.GetItemInfo", itemID)
 	infoLink = NS.SafeString(infoLink)
 	if not infoLink then return nil end -- not loaded yet
-	return Rewards.WornItemStats(infoLink)
+	return Rewards.WornItemStats(infoLink), suffixed
 end
 
 -- The itemKey tooltip of a browse GROUP (unresolved suffix) ends with
@@ -143,6 +124,74 @@ function AuctionScore.IsGroupSummary(data)
 		end
 	end
 	return false
+end
+
+--------------------------------------------------------------------------------
+-- Capture: learn suffixed stats from any item tooltip the player opens.
+-- item link: item:itemID:enchant:gem1:gem2:gem3:gem4:suffixID:... - the suffix is
+-- field 7. Classic-style links may carry it negative; browse keys are positive.
+--------------------------------------------------------------------------------
+local function LinkSuffix(link)
+	local suffix = link and link:match("item:%d+:[^:]*:[^:]*:[^:]*:[^:]*:[^:]*:(%-?%d+)")
+	suffix = tonumber(suffix)
+	return suffix and suffix ~= 0 and math.abs(suffix) or nil
+end
+AuctionScore.LinkSuffix = LinkSuffix
+
+-- Called for every item tooltip. Returns the capture key when something new was learned.
+function AuctionScore.CaptureFromLink(link, tooltipData)
+	link = NS.SafeString(link)
+	local suffix = LinkSuffix(link)
+	if not suffix then return nil end
+	local itemID = NS.SafeNumber(NS.Call("C_Item.GetItemInfoInstant", link))
+	local _, _, _, itemLevel = NS.Call("C_Item.GetItemInfo", link)
+	itemLevel = NS.SafeNumber(itemLevel)
+	if not itemID or not itemLevel then return nil end
+	local key = Key(itemID, itemLevel, suffix)
+	if captured[key] then return nil end
+	-- The tooltip that is open has the suffix lines; parse it first, API second.
+	local stats = (type(tooltipData) == "table" and Rewards.StatsFromTooltipData(tooltipData)) or Rewards.WornItemStats(link)
+	if not stats or AuctionScore.IsGroupSummary(tooltipData) then return nil end
+	captured[key] = stats
+	cache[key] = nil -- the estimate for this key is stale
+	AuctionScore.RepaintKey(key)
+	return key
+end
+
+-- Re-Decorate every live cell that shows `key`.
+function AuctionScore.RepaintKey(key)
+	for cell in pairs(liveCells) do
+		local ref = cell.qamScoreRef
+		if ref and cell:IsShown() and Key(ref.itemID, ref.itemLevel, ref.itemSuffix, ref.link) == key then
+			AuctionScore.Decorate(cell, cell.qamScoreText, ref, cell.qamScoreNeighbour)
+		end
+	end
+end
+
+function AuctionScore.CapturedCount()
+	local n = 0
+	for _ in pairs(captured) do n = n + 1 end
+	return n
+end
+
+local function OnAnyItemTooltip(tooltip, data)
+	if not NS.loaded or not NS.db.settings.ahScore then return end
+	local link = type(data) == "table" and NS.SafeString(data.hyperlink) or nil
+	if not link and tooltip and type(tooltip.GetItem) == "function" then
+		local _, itemLink = tooltip:GetItem()
+		link = NS.SafeString(itemLink)
+	end
+	if not link then return end
+	local ok, err = pcall(AuctionScore.CaptureFromLink, link, data)
+	if not ok then NS.WarnOnce("ahscore-capture", tostring(err)) end
+end
+
+function AuctionScore.InstallCapture()
+	if AuctionScore.captureInstalled then return end
+	if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and Enum.TooltipDataType then
+		TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, OnAnyItemTooltip)
+		AuctionScore.captureInstalled = true
+	end
 end
 
 function AuctionScore.Score(itemID, itemLevel, itemSuffix, link)
@@ -160,7 +209,7 @@ function AuctionScore.Score(itemID, itemLevel, itemSuffix, link)
 		cache[key] = false
 		return false
 	end
-	local stats = ListingStats(itemID, itemLevel, itemSuffix, link)
+	local stats, estimate = ListingStats(itemID, itemLevel, itemSuffix, link)
 	if not stats then return nil end -- pending: not cached, so the next paint retries
 
 	local player = Rules.Player()
@@ -174,7 +223,7 @@ function AuctionScore.Score(itemID, itemLevel, itemSuffix, link)
 	local value = Rewards.StatValue(stats, player, weaponSubclass)
 	local worn = Rewards.WornItem(equipLoc, player)
 	if worn == nil then return nil end -- worn item data not loaded yet
-	local result = { wearable = true, value = value, wornValue = worn.value or 0 }
+	local result = { wearable = true, value = value, wornValue = worn.value or 0, estimate = estimate or nil }
 	result.gain = value - result.wornValue
 	result.upgrade = result.gain > AuctionScore.MIN_DELTA
 	cache[key] = result
@@ -228,12 +277,20 @@ local function RestoreRight(cell, text)
 	if saved and text then text:SetPoint("RIGHT", saved.rel or cell, saved.relPoint or "RIGHT", saved.x, saved.y) end
 end
 
--- Show the bubble with `label` and push the text(s) left of it.
-function AuctionScore.Place(cell, text, label, neighbour)
+-- Show the bubble with `label` and push the text(s) left of it. estimate = true
+-- paints it yellow: the number is the base item's, the suffix stats are not known
+-- until the row is hovered.
+function AuctionScore.Place(cell, text, label, neighbour, estimate)
 	local bubble = cell.qamScoreBubble
 	if not bubble then
 		bubble = CreateBubble(cell)
 		cell.qamScoreBubble = bubble
+	end
+	local palette = estimate and AuctionScore.ESTIMATE or AuctionScore.EXACT
+	bubble.text:SetTextColor(unpack(palette.text))
+	if bubble.SetBackdropColor then
+		bubble:SetBackdropColor(unpack(palette.bg))
+		bubble:SetBackdropBorderColor(unpack(palette.border))
 	end
 	bubble.text:SetText(label)
 	bubble:SetWidth(math.ceil(bubble.text:GetStringWidth()) + 2 * AuctionScore.BUBBLE_PAD)
@@ -264,7 +321,11 @@ end
 -- The one call a provider makes per painted row. itemRef is
 -- { itemID, itemLevel, itemSuffix } or { link = "|Hitem:..." }.
 -- Returns the score result (nil = pending, false = not an upgrade candidate).
+-- The cell remembers what it shows (qamScoreRef/Text/Neighbour) so a later hover
+-- capture can repaint it in place.
 function AuctionScore.Decorate(cell, text, itemRef, neighbour)
+	cell.qamScoreRef, cell.qamScoreText, cell.qamScoreNeighbour = itemRef, text, neighbour
+	liveCells[cell] = true
 	if not NS.loaded or not NS.db.settings.ahScore then
 		AuctionScore.Clear(cell, text, neighbour)
 		return false
@@ -277,7 +338,7 @@ function AuctionScore.Decorate(cell, text, itemRef, neighbour)
 	end
 	local label = result and AuctionScore.Format(result.gain) or nil
 	if label then
-		AuctionScore.Place(cell, text, label, neighbour)
+		AuctionScore.Place(cell, text, label, neighbour, result.estimate)
 	else
 		AuctionScore.Clear(cell, text, neighbour)
 	end
@@ -337,9 +398,10 @@ function AuctionScore.DebugReport()
 	for _, name in ipairs(NS.SortedKeys(AuctionScore.providers)) do
 		NS.Print("  AuctionScore %s: %s", name, AuctionScore.installed[name] and "|cff40ff40installed|r" or "|cff808080not installed|r")
 	end
+	NS.Print("  AuctionScore capture: %s, %d suffixed listing(s) learned this session", AuctionScore.captureInstalled and "hooked" or "not hooked", AuctionScore.CapturedCount())
 end
 
-NS.RegisterEvent("PLAYER_LOGIN", function() AuctionScore.InstallReady(nil) end)
+NS.RegisterEvent("PLAYER_LOGIN", function() AuctionScore.InstallReady(nil); AuctionScore.InstallCapture() end)
 NS.RegisterEvent("ADDON_LOADED", function(name) if NS.loaded then AuctionScore.InstallReady(name) end end)
 for _, event in ipairs({ "PLAYER_EQUIPMENT_CHANGED", "PLAYER_LEVEL_UP", "SKILL_LINES_CHANGED" }) do
 	NS.RegisterEvent(event, AuctionScore.Invalidate)
