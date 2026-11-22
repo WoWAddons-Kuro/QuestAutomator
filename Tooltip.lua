@@ -28,6 +28,17 @@ local function Fmt(v)
 	return string.format("%.1f", v)
 end
 
+-- The delta drawn the way the AH bubble draws it: bracketed, in the bubble's green when
+-- it is an upgrade, red when worse, grey when flat. A tooltip cannot host a frame, so the
+-- "bubble" is the bracketed text; the raw scores follow dimmed so the number still explains itself.
+local BUBBLE_UP, BUBBLE_DOWN, BUBBLE_FLAT, DIM = "|cff40ff40", "|cffff4040", "|cffb0b0b0", "|cff808080"
+
+local function Delta(info)
+	local color = info.upgrade and BUBBLE_UP or (info.gain < 0 and BUBBLE_DOWN or BUBBLE_FLAT)
+	local sign = info.gain >= 0 and "+" or ""
+	return string.format("%s[ %s%s ]|r", color, sign, Fmt(info.gain))
+end
+
 -- The item facts the scorer needs, from a hyperlink. nil when it is not equipment
 -- or the item data has not loaded.
 function Tooltip.Describe(link)
@@ -62,15 +73,13 @@ end
 function Tooltip.Line(info)
 	local left = Tooltip.PREFIX_COLOR .. L["Quest Automator"] .. "|r"
 	if not info.wearable then
-		return left, "|cff808080" .. L["cannot wear"] .. "|r"
+		return left, DIM .. L["cannot wear"] .. "|r"
 	end
 	local right
 	if info.gain ~= nil then
-		local color = info.upgrade and "|cff40ff40" or (info.gain < 0 and "|cffff4040" or "|cffb0b0b0")
-		local sign = info.gain >= 0 and "+" or ""
-		right = string.format("%s%s%s|r   %s %s %s", color, sign, Fmt(info.gain), Fmt(info.value), info.gain >= 0 and ">" or "<", Fmt(info.wornValue))
+		right = string.format("%s  %s%s %s %s|r", Delta(info), DIM, Fmt(info.value), info.gain >= 0 and ">" or "<", Fmt(info.wornValue))
 	else
-		right = Fmt(info.value)
+		right = DIM .. Fmt(info.value) .. "|r"
 	end
 	if info.untrained then right = right .. "  |cffff9933" .. L["needs weapon training"] .. "|r" end
 	return left, right
@@ -89,6 +98,8 @@ local function OnItem(tooltip, data)
 	if not ok then NS.WarnOnce("tooltip", tostring(info)) return end
 	if not info then return end
 	local left, right = Tooltip.Line(info)
+	-- a blank line sets our row apart from the item's own stat block and other addons' lines
+	tooltip:AddLine(" ")
 	tooltip:AddDoubleLine(left, right)
 	if tooltip.Show then tooltip:Show() end
 end
