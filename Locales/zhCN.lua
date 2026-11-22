@@ -360,5 +360,5 @@ L["Score line on equipment tooltips"] = "在装备提示中显示评分"
 L["Adds a Quest Automator line to every equipment tooltip: the item's stat value for your class, the gain or loss against what you wear in that slot, and whether it counts as an upgrade."] = "在每个装备提示中加一行：该物品对你职业的属性价值、与同部位当前装备的差值，以及是否算升级。"
 
 -- Auction house upgrade bubble (AuctionScore/)
-L["Upgrade bubble in the auction house list"] = "拍卖行列表中的升级气泡"
+L["Show upgrade scores on auction upgrades"] = "拍卖行列表中的升级气泡"
 L["Equipment in the auction house browse list that beats what you wear gets a green +gain bubble at the right of its name (stat points, same scale as the tooltip line). Nothing is shown for sidegrades or downgrades."] = "拍卖行浏览列表中优于你当前装备的物品，会在名称右侧显示绿色的 +增益 气泡（属性点，与提示行同一尺度）。同级或降级的物品不显示。"
