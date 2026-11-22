@@ -161,9 +161,6 @@ function AuctionScore.CaptureFromLink(link, tooltipData)
 	local linkItemID = NS.SafeNumber(NS.Call("C_Item.GetItemInfoInstant", link))
 	if linkItemID ~= ref.itemID then return nil end
 	local key = Key(ref.itemID, ref.itemLevel, ref.itemSuffix)
-	if NS.db.settings.ahTrace then
-		NS.Print("ahtrace CAPTURE row key %s <- %s (known=%s)", key, link:match("|H(item:[^|]+)|h") or link, tostring(captured[key] ~= nil))
-	end
 	if captured[key] then return nil end
 	-- The tooltip that is open has the suffix lines; parse it first, API second.
 	local stats = (type(tooltipData) == "table" and Rewards.StatsFromTooltipData(tooltipData)) or Rewards.WornItemStats(link)
@@ -227,9 +224,6 @@ function AuctionScore.Score(itemID, itemLevel, itemSuffix, link)
 	end
 	local stats, estimate = ListingStats(itemID, itemLevel, itemSuffix, link)
 	if not stats then return nil end -- pending: not cached, so the next paint retries
-	if NS.db and NS.db.settings and NS.db.settings.ahTrace and (itemSuffix or 0) ~= 0 then
-		NS.Print("ahtrace SCORE key %s estimate=%s", key, tostring(estimate))
-	end
 
 	local player = Rules.Player()
 	local c = { classID = classID, subclassID = subclassID, equipLoc = equipLoc, usable = true, stats = stats }
