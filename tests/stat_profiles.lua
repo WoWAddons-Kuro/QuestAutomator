@@ -23,7 +23,21 @@ for class, row in pairs(Rules.WEIGHTS) do
 end
 assert(Rules.BUILTIN_PROFILES.SHAMAN[1].name == 'Shaman Balanced Leveling')
 assert(Rules.Profile('SHAMAN:leveling').class == 'SHAMAN' and Rules.Profile('NOPE:leveling') == nil)
-print('PASS built-in profiles: one leveling row per class, mirrors WEIGHTS')
+-- Shaman ships four built-ins in slot order; a specialisation is the leveling row with
+-- its deltas applied and nothing else changed (a COMPLETE row, readable as "leveling, but...").
+local sh = Rules.BUILTIN_PROFILES.SHAMAN
+assert(#sh == 4 and sh[2].id == 'SHAMAN:enhancement' and sh[3].id == 'SHAMAN:elemental' and sh[4].id == 'SHAMAN:restoration')
+assert(sh[2].name == 'Shaman Enhancement' and sh[4].name == 'Shaman Restoration')
+local enh, ele, res = sh[2].weights, sh[3].weights, sh[4].weights
+assert(enh.STRENGTH == 1.2 and enh.INTELLECT == 0.3 and enh.MELEE_DPS == 4.0, 'enhancement: sharper melee, inherits weapon DPS')
+assert(ele.INTELLECT == 1.4 and ele.SPELL_DAMAGE_DONE == 1.2 and ele.MELEE_DPS == 0.1 and ele.ATTACK_POWER == 0, 'elemental: caster, weapon DPS is a stat stick')
+assert(res.SPELL_HEALING_DONE == 1.3 and res.MANA_REGENERATION == 1.3 and res.HIT_RATING == 0.1, 'restoration: healer')
+assert(enh.ARMOR == 0.1 and ele.ARMOR == 0.1 and res.ARMOR == 0.1, 'keys not in a delta inherit the leveling value')
+-- every class without deltas still has exactly its leveling row
+assert(#Rules.BUILTIN_PROFILES.WARRIOR == 1 and #Rules.BUILTIN_PROFILES.PRIEST == 1)
+-- built-in rows are complete: every EDITABLE_STATS key resolves to a number
+for _, e in ipairs(Rules.EDITABLE_STATS) do assert(type(enh[e.key] or 0) == 'number') end
+print('PASS built-in profiles: leveling row per class mirrors WEIGHTS; shaman ships 4 specs as deltas over it')
 
 -- Selection: nothing set -> leveling default; a selected id of another class is ignored.
 local sel = Rules.SelectedProfile('SHAMAN')
@@ -67,7 +81,7 @@ assert(c2.id == 'SHAMAN:custom:2' and c2.name == 'My Enhance' and c2.forkedFrom 
 assert(c2.weights.INTELLECT == 1.4, 'copies the fork\'s current values')
 -- Profiles(): built-ins first, then customs by id
 local list = Rules.Profiles('SHAMAN')
-assert(#list == 3 and list[1].id == 'SHAMAN:leveling' and list[2].id == c1.id and list[3].id == c2.id)
+assert(#list == 6 and list[1].id == 'SHAMAN:leveling' and list[4].id == 'SHAMAN:restoration' and list[5].id == c1.id and list[6].id == c2.id, 'four built-ins then customs by id')
 assert(#Rules.Profiles('WARRIOR') == 1, 'customs are per class')
 print('PASS fork-of-fork keeps the built-in ancestor; Profiles() ordering')
 
@@ -109,7 +123,7 @@ assert(sham and sham.class == 'SHAMAN' and sham.weights.INTELLECT == 1.4 and sha
 assert(NS.db.statProfileMigrated.MAGE == nil, 'an empty class row migrates nothing')
 assert(Rules.Profile(NS.db.statProfileMigrated.DRUID).weights.AGILITY == 2.0)
 Rules.MigrateLegacyWeights() -- idempotent when there is nothing left
-assert(#Rules.Profiles('SHAMAN') == 2)
+assert(#Rules.Profiles('SHAMAN') == 5, 'four shaman built-ins + the migrated custom')
 print('PASS legacy per-cell overrides migrate to one custom profile per class')
 
 -- Player() still hands callers weights the same way.

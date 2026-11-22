@@ -139,7 +139,15 @@ function Rules.ApplyClientWeightOverrides(overrides)
 		local profile = Rules.WEIGHTS[class]
 		if profile and type(row) == "table" then
 			for key, weight in pairs(row) do
-				if type(weight) == "number" then profile[key] = weight end
+				if type(weight) == "number" then
+					profile[key] = weight
+					-- The built-in profiles were copied from WEIGHTS; a late override must
+					-- reach them too (a specialisation delta that set this key keeps its own).
+					for _, p in ipairs((Rules.BUILTIN_PROFILES or {})[class] or {}) do
+						local delta = ((Rules.BUILTIN_PROFILE_DELTAS or {})[class] or {})[p.id:match(":(%w+)$")]
+						if not (delta and delta[key] ~= nil) then p.weights[key] = weight end
+					end
+				end
 			end
 		end
 	end
@@ -191,24 +199,47 @@ Rules.EDITABLE_STATS = {
 --------------------------------------------------------------------------------
 
 -- Built-in profile rows. The leveling row of each class is Rules.WEIGHTS[class]
--- (owner-tuned over time; shaman corrected 2026-11-22). Non-leveling rows are
--- added in P3 after owner review of the numbers - until then every class ships
--- its leveling row only, so behaviour is byte-for-byte what it was.
--- A row here is a table of weights; the weapon pseudo-stats are copied in from
--- WEIGHTS at load so the editor and the scorer see one complete row.
+-- (owner-tuned over time; shaman corrected 2026-11-22). Each class may add
+-- specialisation rows; a specialisation row lists only the keys that DIFFER from
+-- the leveling row and is completed from it at load, so every built-in is a full
+-- row and a specialisation stays readable as "leveling, but...".
+--
+-- PROPOSED NUMBERS (P3 owner review): only SHAMAN has specialisation rows so far.
+-- Enhancement sharpens the melee bias; Elemental and Restoration are caster rows
+-- where weapon DPS is near-worthless (a staff is a stat stick) and spell stats
+-- carry the value. Everything else ships its leveling row only until reviewed.
 Rules.BUILTIN_PROFILE_NAMES = {
 	WARRIOR = { leveling = "Warrior Arms/Fury Leveling" },
 	PALADIN = { leveling = "Paladin Retribution Leveling" },
 	HUNTER  = { leveling = "Hunter Marksman/Beast Leveling" },
 	ROGUE   = { leveling = "Rogue Combat Leveling" },
 	PRIEST  = { leveling = "Priest Shadow Leveling" },
-	SHAMAN  = { leveling = "Shaman Balanced Leveling" },
+	SHAMAN  = { leveling = "Shaman Balanced Leveling", enhancement = "Shaman Enhancement", elemental = "Shaman Elemental", restoration = "Shaman Restoration" },
 	MAGE    = { leveling = "Mage Frost Leveling" },
 	WARLOCK = { leveling = "Warlock Affliction/Demonology Leveling" },
 	DRUID   = { leveling = "Druid Feral Leveling" },
 }
--- Display order of built-in slots per class; "leveling" is always first.
-Rules.BUILTIN_PROFILE_ORDER = { "leveling" }
+-- Display order of built-in slots; "leveling" is always first. A class without a
+-- row for a slot simply skips it.
+Rules.BUILTIN_PROFILE_ORDER = { "leveling", "enhancement", "elemental", "restoration" }
+
+-- Specialisation deltas over the class leveling row. Keys absent here inherit.
+Rules.BUILTIN_PROFILE_DELTAS = {
+	SHAMAN = {
+		-- Enhancement: pure melee. Int only for mana to shock; spell stats near nothing.
+		enhancement = { STRENGTH = 1.2, AGILITY = 1.0, ATTACK_POWER = 0.6, STAMINA = 0.5, INTELLECT = 0.3, SPIRIT = 0.1,
+			SPELL_POWER = 0.1, SPELL_DAMAGE_DONE = 0.1, SPELL_HEALING_DONE = 0.05, MANA_REGENERATION = 0.3,
+			HIT_RATING = 1.0, CRIT_RATING = 1.0, MELEE_SPEED = 0.15 },
+		-- Elemental: caster DPS. Weapon DPS is a stat stick; Int / spell damage / crit carry it.
+		elemental = { STRENGTH = 0.05, AGILITY = 0.05, ATTACK_POWER = 0, STAMINA = 0.4, INTELLECT = 1.4, SPIRIT = 0.4,
+			SPELL_POWER = 1.2, SPELL_DAMAGE_DONE = 1.2, SPELL_HEALING_DONE = 0.3, MANA_REGENERATION = 0.8,
+			HIT_RATING = 1.0, CRIT_RATING = 0.9, MANA = 0.05, MELEE_DPS = 0.1, MELEE_SPEED = 0 },
+		-- Restoration: healer. Healing / MP5 / Int / Spirit; damage stats near nothing.
+		restoration = { STRENGTH = 0.05, AGILITY = 0.05, ATTACK_POWER = 0, STAMINA = 0.4, INTELLECT = 1.3, SPIRIT = 0.8,
+			SPELL_POWER = 1.0, SPELL_DAMAGE_DONE = 0.2, SPELL_HEALING_DONE = 1.3, MANA_REGENERATION = 1.3,
+			HIT_RATING = 0.1, CRIT_RATING = 0.5, MANA = 0.05, MELEE_DPS = 0.1, MELEE_SPEED = 0 },
+	},
+}
 
 local function CopyWeights(row)
 	local out = {}
@@ -221,11 +252,16 @@ Rules.BUILTIN_PROFILES = {}
 for class, row in pairs(Rules.WEIGHTS) do
 	local list = {}
 	local names = Rules.BUILTIN_PROFILE_NAMES[class] or {}
+	local deltas = Rules.BUILTIN_PROFILE_DELTAS[class] or {}
 	for _, slot in ipairs(Rules.BUILTIN_PROFILE_ORDER) do
-		-- P1 ships the leveling slot only; other slots have no row yet and are skipped.
 		if slot == "leveling" then
 			list[#list + 1] = { id = class .. ":" .. slot, class = class, name = names[slot] or (class .. " " .. slot),
 				builtin = true, weights = CopyWeights(row) }
+		elseif deltas[slot] then
+			local weights = CopyWeights(row)
+			for k, v in pairs(deltas[slot]) do weights[k] = v end
+			list[#list + 1] = { id = class .. ":" .. slot, class = class, name = names[slot] or (class .. " " .. slot),
+				builtin = true, weights = weights }
 		end
 	end
 	Rules.BUILTIN_PROFILES[class] = list

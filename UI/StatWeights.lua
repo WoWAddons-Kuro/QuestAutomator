@@ -87,14 +87,26 @@ local function BuildRow(parent, entry, onChanged)
 		local class = Rules.Class()
 		if not class then return end
 		local text = box:GetText() or ""
+		local p = Rules.SelectedProfile(class)
+		local current = p and p.weights[entry.key] or 0
 		if text:match("^%s*$") then
-			WriteWeight(class, entry.key, nil) -- cleared: back to the base value
-			row:Update()
-			if onChanged then onChanged() end
+			-- Empty box = "use the profile's value". On a custom whose cell differs from
+			-- its base this is a real change (back to base); on a built-in or an unchanged
+			-- cell it is a no-op and must NOT fork.
+			local base = p and Rules.ProfileBaseWeight(p.id, entry.key) or 0
+			if p and not p.builtin and current ~= base then
+				WriteWeight(class, entry.key, nil)
+				row:Update()
+				if onChanged then onChanged() end
+			else
+				row:Update()
+			end
 			return
 		end
 		local v = ParseWeight(text)
-		if v == nil then
+		-- Unparseable, or the same number the profile already has: nothing happens.
+		-- A value that MATCHES the placeholder must not create a custom profile.
+		if v == nil or v == current then
 			row:Update()
 			return
 		end
@@ -119,15 +131,16 @@ local function BuildRow(parent, entry, onChanged)
 		local p = Rules.SelectedProfile(class)
 		local value = p and p.weights[entry.key] or 0
 		local base = p and Rules.ProfileBaseWeight(p.id, entry.key) or 0
-		-- Built-in: the value sits in the box as-is, nothing greyed. Custom: a cell that
-		-- differs from the forked-from built-in shows its value in the box and the base
-		-- greyed behind it; a cell equal to the base shows the base greyed only.
+		-- The box holds only what the player changed; the profile's current value sits
+		-- behind it in grey. Built-in: every cell is grey placeholder, box empty. Custom:
+		-- a cell that differs from the forked-from built-in shows ITS value in the box
+		-- (gold label) with the base greyed behind; an unchanged cell is placeholder only.
 		local changed = p and not p.builtin and value ~= base
-		self.Placeholder:SetText(base > 0 and FormatWeight(base) or "")
-		if p and (p.builtin or changed) then
-			self.Box:SetText(value > 0 and FormatWeight(value) or (changed and "0" or ""))
+		local shown = changed and base or value
+		self.Placeholder:SetText(shown > 0 and FormatWeight(shown) or "")
+		if changed then
+			self.Box:SetText(value > 0 and FormatWeight(value) or "0")
 			self.Label:SetTextColor(1, 0.82, 0)
-			if not changed then self.Label:SetTextColor(1, 1, 1) end
 			if value > 0 then self.Box:SetTextColor(1, 1, 1) else self.Box:SetTextColor(0.5, 0.5, 0.5) end
 		else
 			self.Box:SetText("")

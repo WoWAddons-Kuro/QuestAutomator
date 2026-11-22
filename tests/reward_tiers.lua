@@ -138,7 +138,7 @@ local eraOverrides = eraNS.ClientFlavours.classic_era.StatWeightOverrides()
 assert(eraOverrides.DRUID and eraOverrides.DRUID.MELEE_DPS == 0, 'Era client must zero druid melee DPS')
 local savedDPS, savedSpeed = Rules.WEIGHTS.DRUID.MELEE_DPS, Rules.WEIGHTS.DRUID.MELEE_SPEED
 Rules.ApplyClientWeightOverrides(eraOverrides)
-assert(Rules.DefaultWeight('DRUID', 'MELEE_DPS') == 0 and Rules.DefaultWeight('ROGUE', 'MELEE_DPS') == 4.0, 'override touches only the listed class/stat')
+assert(Rules.WEIGHTS.DRUID.MELEE_DPS == 0 and Rules.WEIGHTS.ROGUE.MELEE_DPS == 4.0, 'override touches only the listed class/stat')
 choices = { mace(1, 9.5, 300), gun }
 d = Rewards.Evaluate(choices, fit, player('DRUID', 20))
 assert(d.index == 2 and d.reason == 'fallback' and d.tier == 'tier5Action', 'Era druid: hammer DPS is worthless -> no upgrade -> best cash item (the gun)')
