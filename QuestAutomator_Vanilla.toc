@@ -4,7 +4,7 @@
 ## Notes: Accepts and turns in quests for you and picks the reward that fits your class and level, or the most valuable one. Hold Shift while talking to an NPC to do it by hand.
 ## Notes-zhCN: 自动接受并交付任务，并按职业与等级选择最合适（或最值钱）的任务奖励。与 NPC 对话时按住 Shift 即可临时改为手动。
 ## Author: qqytqqyt
-## Version: @project-version@
+## Version: v2026.11.21.2359
 ## IconTexture: Interface\Icons\Achievement_Quests_Completed_08
 ## AddonCompartmentFunc: QuestAutomator_OnAddonCompartmentClick
 ## AddonCompartmentFuncOnEnter: QuestAutomator_OnAddonCompartmentEnter
