@@ -176,8 +176,6 @@ NS.DEFAULT_SETTINGS = {
 	turnInRepeatable = false,  -- also hand in daily / repeatable quests (they usually consume items)
 	confirmPartyQuests = true, -- accept escort quests started by a party member
 	rewardMode = "fit",        -- "fit" (armour type + stats), "value" (most expensive), "manual"
-	weapons = false,           -- let the addon pick weapons too; off, any weapon among the choices leaves the whole choice to you
-	trinkets = false,          -- let the addon pick trinkets too; same rule
 	fallbackToValue = true,    -- fit mode: nothing usable -> take the most valuable reward
 	manualQuality = 3,         -- a reward of this quality or better is left to the player (-1 = never); 3 = Rare
 	announce = true,           -- chat line for every quest accepted, handed in and reward chosen
@@ -253,7 +251,8 @@ function NS.InitDB()
 	local settings = CopyDefaults(type(db.settings) == "table" and db.settings or {}, NS.DEFAULT_SETTINGS)
 	settings.settingsVersion = NS.SETTINGS_VERSION
 	if not Contains(NS.REWARD_MODES, settings.rewardMode) then settings.rewardMode = NS.DEFAULT_SETTINGS.rewardMode end
-	settings.weaponOffered, settings.trinketOffered = nil, nil -- removed in 0.2.0: a weapon or trinket offered always leaves the choice to the player
+	settings.weaponOffered, settings.trinketOffered = nil, nil -- removed in 0.2.0
+	settings.weapons, settings.trinkets = nil, nil -- removed 2026-11-21: weapons follow the 1/2/3 upgrade rule like armour; a trinket is always ambiguous (tier 1)
 	settings.modifier = nil -- removed: any modifier key (Shift, Ctrl or Alt) always pauses the conversation
 	if not Contains(NS.QUALITY_CHOICES, settings.manualQuality) then settings.manualQuality = NS.DEFAULT_SETTINGS.manualQuality end
 	db.settings = settings
@@ -345,8 +344,6 @@ local function PrintHelp()
 	NS.Print(L["/qam pause - pause for this session (or hold Shift, Ctrl or Alt while talking to an NPC)"])
 	NS.Print(L["/qam accept|turnin|trivial|repeatable|party|announce on|off - toggle one behaviour"])
 	NS.Print(L["/qam reward fit|value|manual - how the reward is chosen"])
-	NS.Print(L["/qam weapons on|off - let the addon pick weapons too"])
-	NS.Print(L["/qam trinkets on|off - let the addon pick trinkets too"])
 	NS.Print(L["/qam quality <1-5|off> - a reward of this quality or better is left to you (3 = rare)"])
 	NS.Print(L["/qam stats <stat> [<stat>...] | default - the stats this character wants, most important first"])
 	NS.Print(L["/qam ignore [npc|quest] - never automate the NPC or quest in front of you"])
@@ -454,8 +451,8 @@ function NS.PrintStatus()
 	NS.Print(L["Automation: %s%s"], OnOff(s.enabled), (NS.Auto and NS.Auto.SessionPaused()) and (" (" .. L["paused for this session"] .. ")") or "")
 	NS.Print(L["Accept quests: %s (low-level %s, repeatable %s) | hand in: %s (repeatable %s) | party escorts: %s"],
 		OnOff(s.accept), OnOff(s.acceptTrivial), OnOff(s.acceptRepeatable), OnOff(s.turnIn), OnOff(s.turnInRepeatable), OnOff(s.confirmPartyQuests))
-	NS.Print(L["Reward: %s | weapons: %s | trinkets: %s | no upgrade: %s"], NS.RewardModeName(s.rewardMode),
-		OnOff(s.weapons), OnOff(s.trinkets), s.fallbackToValue and L["take the most valuable"] or L["leave it to me"])
+	NS.Print(L["Reward: %s | no upgrade: %s"], NS.RewardModeName(s.rewardMode),
+		s.fallbackToValue and L["take the most valuable"] or L["leave it to me"])
 	NS.Print(L["Left to me from quality: %s"], s.manualQuality >= 0 and NS.QualityName(s.manualQuality) or L["never"])
 	NS.Print(L["Announcements: %s"], OnOff(s.announce))
 	if NS.Rules and NS.Rules.PrintProfile then NS.Rules.PrintProfile() end
@@ -497,10 +494,6 @@ SlashCmdList["QUESTAUTOMATOR"] = function(msg)
 	elseif cmd == "reward" or cmd == "rewards" or cmd == "mode" then
 		SetChoice("rewardMode", NS.REWARD_MODES, rest, L["Reward choice"],
 			{ fit = NS.RewardModeName("fit"), value = NS.RewardModeName("value"), manual = NS.RewardModeName("manual") })
-	elseif cmd == "weapons" then
-		NS.SetFlag("weapons", rest, L["Pick weapons too"])
-	elseif cmd == "trinkets" or cmd == "trinket" then
-		NS.SetFlag("trinkets", rest, L["Pick trinkets too"])
 	elseif cmd == "fallback" then
 		NS.SetFlag("fallbackToValue", rest, L["No upgrade: take the most valuable"])
 	elseif cmd == "quality" then

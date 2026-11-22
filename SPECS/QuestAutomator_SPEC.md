@@ -198,7 +198,7 @@ accepts the legacy words as a belt-and-braces fallback.
 | Tier | Condition (over the set of choices) | Default action | Setting key |
 |---|---|---|---|
 | **Q** | Any choice has quality ≥ `manualQuality` (default Rare) — kept as a global gate | ask | `manualQuality` (existing) |
-| **1** | **Ambiguous** — a trinket or relic/libram/idol/totem among the upgrades; a weapon or trinket whose "pick" setting is off; or **no equipment at all on offer** (only consumables: potions, food, bags, recipes — implemented 2026-11-21, `Rewards.IsEquipment`). Message: *"ambiguous rewards, make a manual selection"*. The `Use:` / proc-line detection from the first design is **not** implemented. | `ask` | `tier1Action` |
+| **1** | **Ambiguous** — a trinket or relic/libram/idol/totem among the upgrades (always, no setting); or **no equipment at all on offer** (only consumables: potions, food, bags, recipes — implemented 2026-11-21, `Rewards.IsEquipment`). Message: *"ambiguous rewards, make a manual selection"*. **Weapons are ordinary gear** and follow steps 1/2/3 like armour (bug fixed 2026-11-21: a leftover `weapons=false` guard sent any lone weapon upgrade here). The `Use:` / proc-line detection from the first design is **not** implemented. | `ask` | `tier1Action` |
 | **2** | Exactly one **best-wearable** choice is an **upgrade** (= rule step 1) | `upgrade` | `tier2Action` |
 | **3** | *(unused — the original ilvl-sidegrade tier; stat-based upgrades made it redundant. Setting is saved only.)* | `upgrade` | `tier3Action` |
 | **4** | **Two or more** best-wearable choices are upgrades (= rule step 2) | `ask` | `tier4Action` |
@@ -269,6 +269,7 @@ re-opens it for the selected log quest.
 ### 6.5 Settings schema changes
 
 Removed: `rewardMode`, `fallbackToValue`, `weapons`, `trinkets` (trinkets are tier 1; weapons flow through tiers).
+`weapons` / `trinkets` were actually deleted from code 2026-11-21 (defaults, settings page, minimap menu, slash, `Rewards.KINDS`/`ApplyKinds`); `InitDB` nils the saved keys.
 Added: `tier1Action..tier5Action`, `weaponProficiency`, `valueSource`, `prePickUI`.
 Kept: `manualQuality`. `InitDB` drops the removed keys. Slash: `/qam tier <1-5> recommend|auto`, `/qam value vendor|auction|disenchant`,
 `/qam weaponskill learnable|usable`.

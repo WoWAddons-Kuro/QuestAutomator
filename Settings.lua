@@ -290,8 +290,6 @@ local function Build()
 	r:Add(RadioRow(r, "rewardMode", L["Reward choice"], NS.REWARD_MODES,
 		{ fit = L["Best fit"], value = L["Vendor value"], manual = L["Manual"] },
 		L["Best fit compares the armour class you wear at your level and the stats your class wants. Most valuable takes the reward with the highest vendor price."], { labelWidth = 160 }), 20)
-	r:Add(Check(r, "weapons", L["Pick weapons too"]), 26)
-	r:Add(Check(r, "trinkets", L["Pick trinkets too"]), 26)
 	r:Add(Check(r, "fallbackToValue", L["No upgrade: take the most valuable"]), 26)
 	local qualityNames = {}
 	for _, v in ipairs(NS.QUALITY_CHOICES) do qualityNames[v] = NS.QualityName(v) end
@@ -305,7 +303,7 @@ local function Build()
 	local t = Section(L["Reward tiers (first match wins)"])
 	t:Add(Note(t), 28).text:SetText(L["One upgrade: take it. Two or more upgrades: ask. No upgrade: take the best cash item. Each step's default can be changed below. Ask me = glow the suggestion and leave the window open. Take the upgrade = the biggest stat gain. Take the cash = the highest vendor price, wearable or not."])
 	local tierRows = {
-		{ "1", L["Ambiguous rewards (trinket, relic, consumables, or a weapon or trinket you have not allowed)"], L["When a reward is a trinket or relic, when only consumables such as potions and food are offered, or when a weapon or trinket you have not allowed is on the table. The addon cannot weigh these, so asking you is the safe choice."] },
+		{ "1", L["Ambiguous rewards (trinket, relic, or only consumables)"], L["When a reward is a trinket or relic, or when only consumables such as potions and food are offered. The addon cannot weigh these, so asking you is the safe choice. Weapons are ordinary gear and follow the rules below."] },
 		{ "2", L["One reward is a clear upgrade"], L["Exactly one reward adds more stat value than the upgrade margin over what you wear in that slot."] },
 		{ "4", L["Two or more rewards are upgrades"], L["Several rewards would improve your gear. Recommend lets you weigh them; the coin marks the one with the biggest gain."] },
 		{ "5", L["Nothing is an upgrade: best cash item"], L["No reward beats what you wear, so every reward is vendor trash. Take the one with the highest vendor price - whether or not your class could wear it. (There is no upgrade to take here, so that choice acts as take the cash.)"] },

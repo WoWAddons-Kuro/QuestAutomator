@@ -457,36 +457,6 @@ function Rewards.ByValue(items, reason)
 	return { reason = "novalue" }
 end
 
--- Kinds of reward the addon does not pick unless the matching setting allows it.
--- When at least one is among the choices, the whole choice is the player's.
--- Checked in this order.
-Rewards.KINDS = {
-	{ key = "weapons", reason = "weapon", Is = function(c) return Rules.IsWeapon(c.classID, c.subclassID) end },
-	{ key = "trinkets", reason = "trinket", Is = function(c) return Rules.IsTrinket(c.equipLoc) end },
-}
-
--- The rewards to score, or nil and the reason the choice is handed to the player.
--- A guarded kind (weapon / trinket with its setting off) hands off only when the
--- choice is AMBIGUOUS: some other choice is something the character could wear.
--- When everything else is unwearable (a druid offered a staff or mail leggings)
--- the guarded item is the only usable option and is scored like anything else.
-function Rewards.ApplyKinds(items, settings, player)
-	for _, kind in ipairs(Rewards.KINDS) do
-		if not settings[kind.key] then
-			local guarded = false
-			for _, c in ipairs(items) do
-				if kind.Is(c) then guarded = true break end
-			end
-			if guarded then
-				for _, c in ipairs(items) do
-					if not kind.Is(c) and (player == nil or Rewards.Wearable(c, player)) then return nil, kind.reason end
-				end
-			end
-		end
-	end
-	return items
-end
-
 -- Could the character wear this at all (armour class / weapon skill), stats aside?
 -- Equipment = armour or a weapon (fishing poles excluded). Everything else - potions,
 -- food, bags, recipes, quest items - is a consumable in the reward engine's eyes.
@@ -518,8 +488,8 @@ end
 -- How the code gets there:
 --   Step 1 builds the upgrade set: drop what the class cannot equip (FitScore 0),
 --   then drop what adds no stat value over the worn item (statGain below the band).
---   Step 2 runs the tiers on that set (tier1 "hard to value" - trinket / relic /
---   guarded weapon - goes to recommend first).
+--   Step 2 runs the tiers on that set (tier1 "hard to value" - trinket / relic -
+--   goes to recommend first; weapons are ordinary gear).
 --   Step 3 is the cash fallback: Rewards.ByValue over the WHOLE pool.
 -- The rare-or-better quality gate (manualQuality) still overrides everything to
 -- recommend. A decision with reason "recommend:<tier>" carries `choice` (the coin)
@@ -647,14 +617,12 @@ function Rewards.Evaluate(choices, settings, player)
 		for _, c in ipairs(upgrades) do
 			if not best or Rewards.Better(c, best) then best = c end
 		end
-		-- Tier 1: hard to value. A trinket among the upgrades, or a weapon / trinket
-		-- whose "pick" setting is off, is not something the stat sum can judge.
+		-- Tier 1: hard to value. A trinket or relic among the upgrades is not
+		-- something the stat sum can judge (Use: effects are not read). Weapons get
+		-- NO special treatment: they are just gear and follow the 1/2/3 rule.
 		local hard = false
 		for _, c in ipairs(upgrades) do
 			if Rules.IsTrinket(c.equipLoc) or Rules.RELIC_CLASS[c.subclassID or -1] then hard = true end
-			for _, kind in ipairs(Rewards.KINDS) do
-				if not settings[kind.key] and kind.Is(c) then hard = true end
-			end
 		end
 		local tierKey, action
 		if hard then
@@ -752,8 +720,6 @@ function Rewards.ReasonText(reason, decision)
 	if reason == "quality" then
 		return format(L["a %s reward is offered"], NS.QualityName(decision and decision.quality or 0))
 	end
-	if reason == "weapon" then return L["a weapon is offered"] end
-	if reason == "trinket" then return L["a trinket is offered"] end
 	if reason == "nofit" then return L["none of the rewards fits your class"] end
 	if reason == "notupgrade" then return L["no reward beats what you wear"] end
 	if reason == "sidegrade" then return L["no reward is clearly better than what you wear"] end

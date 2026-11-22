@@ -195,8 +195,6 @@ local function Generator(owner, root)
 				NS.OnSettingsChanged()
 			end)
 	end
-	Flag(root, "weapons", L["Pick weapons too"])
-	Flag(root, "trinkets", L["Pick trinkets too"])
 	Flag(root, "announce", L["Announcements"])
 	Flag(root, "xpBar", L["Completed quests on the experience bar"])
 	root:CreateDivider()

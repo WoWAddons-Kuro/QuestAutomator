@@ -27,7 +27,7 @@ end
 local function player(class, level)
 	return { class = class, level = level, preferredArmor = Rules.PreferredArmor(class, level), weights = Rules.Weights(class) }
 end
-local fit = { rewardMode = 'fit', manualQuality = 3, weapons = true, trinkets = true, fallbackToValue = true }
+local fit = { rewardMode = 'fit', manualQuality = 3, fallbackToValue = true }
 
 -- Dwarven Outfitters on a level-1 shaman: cloth (6 armour), leather (21 armour), mail (cannot wear).
 local choices = { armour(1, A.CLOTH, { ARMOR = 6 }, 4), armour(2, A.LEATHER, { ARMOR = 21 }, 6), armour(3, A.MAIL, { ARMOR = 21 }, 7) }
@@ -184,3 +184,32 @@ choices = { potion(1, 900), armour(2, A.LEATHER, { ARMOR = 21 }, 20) }
 d = Rewards.Evaluate(choices, fit, player('ROGUE', 14))
 assert(d.index == 2 and d.reason == 'fit' and d.tier == 'tier2Action' and choices[1].fit.why == 'notgear', 'gear beside a potion still goes through the upgrade tiers')
 print('PASS mixed consumable + gear offers use the upgrade pipeline')
+
+-- Weapons are ORDINARY gear: no "pick weapons" setting, no special hand-off.
+-- "Old Ironforge Incursion" on a L8 shaman: Calibrated Blunderbuss (gun, cannot wear),
+-- Ironforge Greathammer (2H mace, +7 DPS over the worn staff, untrained but learnable),
+-- Deepblaze (wand, cannot wear). The hammer is the ONE upgrade -> tier 2, taken.
+-- Regression: the removed KINDS guard flagged this as tier 1 "ambiguous".
+local function weapon(index, subclass, equipLoc, dps, sellPrice)
+	return { index = index, itemID = 4000 + index, loaded = true, lootType = Rewards.LOOT_ITEM, quality = 2,
+		sellPrice = sellPrice, count = 1, stats = { DAMAGE_PER_SECOND = dps }, usable = true,
+		classID = Rules.CLASS_WEAPON, subclassID = subclass, equipLoc = equipLoc, itemLevel = 18 }
+end
+choices = { weapon(1, Rules.WEAPON.GUN, 'INVTYPE_RANGEDRIGHT', 10, 979), weapon(2, Rules.WEAPON.MACE2H, 'INVTYPE_2HWEAPON', 16, 1637), weapon(3, Rules.WEAPON.WAND, 'INVTYPE_RANGEDRIGHT', 9, 986) }
+d = Rewards.Evaluate(choices, { rewardMode = 'fit', manualQuality = 3, fallbackToValue = true }, player('SHAMAN', 8))
+assert(d.index == 2 and d.reason == 'fit' and d.tier == 'tier2Action', 'lone weapon upgrade beside unwearable weapons -> tier 2, taken: ' .. tostring(d.tier) .. ' ' .. tostring(d.reason))
+assert(choices[1].fit.why == 'cannotwear' and choices[3].fit.why == 'cannotwear')
+print('PASS weapons follow the 1/2/3 rule: one weapon upgrade is auto-taken')
+
+-- Two weapon upgrades -> tier 4 like any two armour upgrades.
+choices = { weapon(1, Rules.WEAPON.MACE2H, 'INVTYPE_2HWEAPON', 16, 100), weapon(2, Rules.WEAPON.AXE2H, 'INVTYPE_2HWEAPON', 15, 100) }
+d = Rewards.Evaluate(choices, { rewardMode = 'fit', manualQuality = 3, fallbackToValue = true }, player('SHAMAN', 8))
+assert(d.reason == 'recommend' and d.tier == 'tier4Action' and d.upgrades == 2 and d.choice.index == 1, 'two weapon upgrades -> tier 4')
+print('PASS two weapon upgrades are tier 4')
+
+-- A trinket among the upgrades is ALWAYS ambiguous (tier 1), no setting involved.
+local trinket = armour(1, A.MISC or 0, { STAMINA = 5 }, 100); trinket.equipLoc = 'INVTYPE_TRINKET'
+choices = { trinket, armour(2, A.LEATHER, { ARMOR = 21 }, 20) }
+d = Rewards.Evaluate(choices, { rewardMode = 'fit', manualQuality = 3, fallbackToValue = true }, player('ROGUE', 14))
+assert(d.reason == 'recommend' and d.tier == 'tier1Action', 'trinket among the upgrades -> tier 1 ask: ' .. tostring(d.tier) .. ' ' .. tostring(d.reason))
+print('PASS a trinket is always ambiguous (tier 1)')
