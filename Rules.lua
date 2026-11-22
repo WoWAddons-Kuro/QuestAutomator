@@ -178,68 +178,205 @@ Rules.EDITABLE_STATS = {
 	{ key = "MELEE_SPEED", short = "mSpd" }, { key = "RANGED_SPEED", short = "rSpd" },
 }
 
--- User overrides of the class profiles live in NS.db.statWeights[class][key] (account
--- wide). nil = default; a number (0 allowed) replaces the default for that cell.
-function Rules.DefaultWeight(class, key)
-	local profile = Rules.WEIGHTS[class or ""]
-	return profile and profile[key] or 0
-end
+--------------------------------------------------------------------------------
+-- Stat PROFILES (SPECS/STAT_PROFILES.md). A profile is a named, COMPLETE weight row
+-- for one class. Each class ships built-in profiles (code, read-only; [1] is the
+-- leveling default). The player forks a built-in into an account-wide custom profile
+-- by editing any cell; the SELECTION of a profile is per character.
+--
+--   QuestAutomator_StatProfileID   "SHAMAN:leveling" (built-in) | "SHAMAN:custom:3" (custom)
+--   QuestAutomator_StatProfile     { id, class, name, builtin, forkedFrom?, weights = {...complete row...} }
+--
+-- Storage: db.statProfiles[id] (custom only), db.statProfileNextID, cdb.statProfileID.
+--------------------------------------------------------------------------------
 
-function Rules.UserWeight(class, key)
-	local overrides = NS.db and NS.db.statWeights
-	local row = overrides and overrides[class]
-	local v = row and row[key]
-	if type(v) == "number" then return v end
-	return nil
-end
-
-function Rules.EffectiveWeight(class, key)
-	local v = Rules.UserWeight(class, key)
-	if v ~= nil then return v end
-	return Rules.DefaultWeight(class, key)
-end
-
--- Sets or clears (value == nil) one override. Values equal to the default are stored
--- as nil so an untouched grid stays empty in the saved variables.
-function Rules.SetUserWeight(class, key, value)
-	if not NS.db then return end
-	NS.db.statWeights = NS.db.statWeights or {}
-	local row = NS.db.statWeights[class] or {}
-	if value == nil or value == Rules.DefaultWeight(class, key) then value = nil end
-	row[key] = value
-	if next(row) then NS.db.statWeights[class] = row else NS.db.statWeights[class] = nil end
-end
-
-function Rules.ResetUserWeights(class)
-	if not NS.db or not NS.db.statWeights then return end
-	if class then NS.db.statWeights[class] = nil else NS.db.statWeights = {} end
-end
-
--- Weights of a `/qam stats` override, most important first; stats not listed count nothing.
-Rules.OVERRIDE_WEIGHTS = { 1.0, 0.75, 0.55, 0.4, 0.3, 0.25, 0.2, 0.15 }
-
--- Names players may type for `/qam stats`, in both client languages.
-Rules.STAT_ALIASES = {
-	str = "STRENGTH", strength = "STRENGTH", ["力量"] = "STRENGTH",
-	agi = "AGILITY", agility = "AGILITY", ["敏捷"] = "AGILITY",
-	sta = "STAMINA", stam = "STAMINA", stamina = "STAMINA", ["耐力"] = "STAMINA",
-	int = "INTELLECT", intellect = "INTELLECT", intelligence = "INTELLECT", ["智力"] = "INTELLECT",
-	spi = "SPIRIT", spirit = "SPIRIT", ["精神"] = "SPIRIT",
-	ap = "ATTACK_POWER", attackpower = "ATTACK_POWER", ["攻击强度"] = "ATTACK_POWER",
-	rap = "RANGED_ATTACK_POWER", ["远程攻击强度"] = "RANGED_ATTACK_POWER",
-	sp = "SPELL_POWER", spellpower = "SPELL_POWER", ["法术强度"] = "SPELL_POWER",
-	healing = "SPELL_HEALING_DONE", heal = "SPELL_HEALING_DONE", ["治疗"] = "SPELL_HEALING_DONE",
-	spelldamage = "SPELL_DAMAGE_DONE", spelldmg = "SPELL_DAMAGE_DONE", ["法术伤害"] = "SPELL_DAMAGE_DONE",
-	mp5 = "MANA_REGENERATION", ["法力回复"] = "MANA_REGENERATION",
-	hp5 = "HEALTH_REGENERATION",
-	defense = "DEFENSE_SKILL_RATING", def = "DEFENSE_SKILL_RATING", ["防御"] = "DEFENSE_SKILL_RATING",
-	dodge = "DODGE_RATING", ["躲闪"] = "DODGE_RATING", parry = "PARRY_RATING", ["招架"] = "PARRY_RATING",
-	block = "BLOCK_RATING", ["格挡"] = "BLOCK_RATING",
-	hit = "HIT_RATING", ["命中"] = "HIT_RATING", crit = "CRIT_RATING", ["爆击"] = "CRIT_RATING", ["暴击"] = "CRIT_RATING",
-	haste = "HASTE_RATING", ["急速"] = "HASTE_RATING",
-	armor = "ARMOR", armour = "ARMOR", ["护甲"] = "ARMOR", dps = "DAMAGE_PER_SECOND", ["每秒伤害"] = "DAMAGE_PER_SECOND",
-	mana = "MANA", ["法力"] = "MANA", health = "HEALTH", ["生命"] = "HEALTH",
+-- Built-in profile rows. The leveling row of each class is Rules.WEIGHTS[class]
+-- (owner-tuned over time; shaman corrected 2026-11-22). Non-leveling rows are
+-- added in P3 after owner review of the numbers - until then every class ships
+-- its leveling row only, so behaviour is byte-for-byte what it was.
+-- A row here is a table of weights; the weapon pseudo-stats are copied in from
+-- WEIGHTS at load so the editor and the scorer see one complete row.
+Rules.BUILTIN_PROFILE_NAMES = {
+	WARRIOR = { leveling = "Warrior Arms/Fury Leveling" },
+	PALADIN = { leveling = "Paladin Retribution Leveling" },
+	HUNTER  = { leveling = "Hunter Marksman/Beast Leveling" },
+	ROGUE   = { leveling = "Rogue Combat Leveling" },
+	PRIEST  = { leveling = "Priest Shadow Leveling" },
+	SHAMAN  = { leveling = "Shaman Balanced Leveling" },
+	MAGE    = { leveling = "Mage Frost Leveling" },
+	WARLOCK = { leveling = "Warlock Affliction/Demonology Leveling" },
+	DRUID   = { leveling = "Druid Feral Leveling" },
 }
+-- Display order of built-in slots per class; "leveling" is always first.
+Rules.BUILTIN_PROFILE_ORDER = { "leveling" }
+
+local function CopyWeights(row)
+	local out = {}
+	for k, v in pairs(row or {}) do if type(v) == "number" then out[k] = v end end
+	return out
+end
+
+-- Built-ins are built once from WEIGHTS (after the client overrides ran above).
+Rules.BUILTIN_PROFILES = {}
+for class, row in pairs(Rules.WEIGHTS) do
+	local list = {}
+	local names = Rules.BUILTIN_PROFILE_NAMES[class] or {}
+	for _, slot in ipairs(Rules.BUILTIN_PROFILE_ORDER) do
+		-- P1 ships the leveling slot only; other slots have no row yet and are skipped.
+		if slot == "leveling" then
+			list[#list + 1] = { id = class .. ":" .. slot, class = class, name = names[slot] or (class .. " " .. slot),
+				builtin = true, weights = CopyWeights(row) }
+		end
+	end
+	Rules.BUILTIN_PROFILES[class] = list
+end
+
+local function CustomStore()
+	if not NS.db then return nil end
+	NS.db.statProfiles = NS.db.statProfiles or {}
+	return NS.db.statProfiles
+end
+
+function Rules.Profile(id)
+	if type(id) ~= "string" then return nil end
+	local class = id:match("^(%u+):")
+	for _, p in ipairs(Rules.BUILTIN_PROFILES[class or ""] or {}) do
+		if p.id == id then return p end
+	end
+	local store = CustomStore()
+	return store and store[id] or nil
+end
+
+-- Built-ins in slot order, then customs sorted by creation (id number).
+function Rules.Profiles(class)
+	local out = {}
+	for _, p in ipairs(Rules.BUILTIN_PROFILES[class or ""] or {}) do out[#out + 1] = p end
+	local customs = {}
+	for id, p in pairs(CustomStore() or {}) do
+		if p.class == class then customs[#customs + 1] = p end
+	end
+	table.sort(customs, function(a, b)
+		return (tonumber(a.id:match(":custom:(%d+)$")) or 0) < (tonumber(b.id:match(":custom:(%d+)$")) or 0)
+	end)
+	for _, p in ipairs(customs) do out[#out + 1] = p end
+	return out
+end
+
+-- The character's selected profile; the class leveling default when none is set or
+-- the saved id no longer exists (a custom deleted from another character).
+function Rules.SelectedProfile(class)
+	local id = NS.chardb and NS.chardb.statProfileID
+	local p = id and Rules.Profile(id)
+	if p and p.class == class then return p end
+	return (Rules.BUILTIN_PROFILES[class or ""] or {})[1]
+end
+
+function Rules.SelectProfile(id)
+	if not NS.chardb then return false end
+	local p = Rules.Profile(id)
+	if not p then return false end
+	NS.chardb.statProfileID = id
+	return true
+end
+
+-- Case-insensitive prefix match on the display name, built-ins first. nil when nothing matches.
+function Rules.FindProfile(class, text)
+	text = tostring(text or ""):lower():match("^%s*(.-)%s*$")
+	if text == "" then return nil end
+	local exact
+	for _, p in ipairs(Rules.Profiles(class)) do
+		local name = p.name:lower()
+		if name == text then return p end
+		if not exact and name:sub(1, #text) == text then exact = p end
+	end
+	return exact
+end
+
+-- A new custom profile: a complete copy of `fromID` (built-in or custom). The copy
+-- remembers the BUILT-IN it ultimately descends from, so Reset has a target.
+function Rules.ForkProfile(fromID, name)
+	local store = CustomStore()
+	local from = Rules.Profile(fromID)
+	if not store or not from then return nil end
+	NS.db.statProfileNextID = (NS.db.statProfileNextID or 1)
+	local n = NS.db.statProfileNextID
+	NS.db.statProfileNextID = n + 1
+	local p = {
+		id = from.class .. ":custom:" .. n, class = from.class, builtin = false,
+		name = name or (L["Custom: %s"]:format(from.name)),
+		forkedFrom = from.builtin and from.id or from.forkedFrom,
+		weights = CopyWeights(from.weights),
+	}
+	store[p.id] = p
+	return p
+end
+
+function Rules.SetProfileWeight(id, key, value)
+	local p = Rules.Profile(id)
+	if not p or p.builtin then return false end
+	if value ~= nil and type(value) ~= "number" then return false end
+	p.weights[key] = value
+	return true
+end
+
+function Rules.RenameProfile(id, name)
+	local p = Rules.Profile(id)
+	name = tostring(name or ""):match("^%s*(.-)%s*$")
+	if not p or p.builtin or name == "" then return false end
+	for _, other in ipairs(Rules.Profiles(p.class)) do
+		if other ~= p and other.name:lower() == name:lower() then return false end
+	end
+	p.name = name
+	return true
+end
+
+function Rules.DeleteProfile(id)
+	local store = CustomStore()
+	local p = store and store[id]
+	if not p then return false end
+	store[id] = nil
+	if NS.chardb and NS.chardb.statProfileID == id then NS.chardb.statProfileID = nil end
+	return true
+end
+
+-- weights := the forked-from built-in's row.
+function Rules.ResetProfile(id)
+	local p = Rules.Profile(id)
+	local base = p and Rules.Profile(p.forkedFrom)
+	if not p or p.builtin or not base then return false end
+	p.weights = CopyWeights(base.weights)
+	return true
+end
+
+-- The weight a cell shows greyed behind a custom value: the forked-from built-in's.
+-- For a built-in profile it is its own value (nothing to compare with).
+function Rules.ProfileBaseWeight(id, key)
+	local p = Rules.Profile(id)
+	if not p then return 0 end
+	local base = p.builtin and p or Rules.Profile(p.forkedFrom)
+	return base and base.weights[key] or 0
+end
+
+-- One-shot migration from the per-cell account overrides (db.statWeights[class][key]):
+-- every class with any cells becomes "Custom: <leveling name>" with those cells applied,
+-- remembered in db.statProfileMigrated[class] so characters of that class with no
+-- selection are pointed at it on their first load after the upgrade.
+function Rules.MigrateLegacyWeights()
+	local legacy = NS.db and NS.db.statWeights
+	if type(legacy) ~= "table" then return end
+	NS.db.statProfileMigrated = NS.db.statProfileMigrated or {}
+	for class, cells in pairs(legacy) do
+		local base = (Rules.BUILTIN_PROFILES[class] or {})[1]
+		if base and type(cells) == "table" and next(cells) then
+			local p = Rules.ForkProfile(base.id)
+			if p then
+				for key, v in pairs(cells) do if type(v) == "number" then p.weights[key] = v end end
+				NS.db.statProfileMigrated[class] = p.id
+			end
+		end
+	end
+	NS.db.statWeights = nil
+end
 
 --------------------------------------------------------------------------------
 -- Player context.
@@ -435,34 +572,23 @@ function Rules.Talents()
 end
 
 
--- Stat weights for the player: the character's /qam stats list when set, else the
--- class profile with the account's grid overrides applied.
-function Rules.Weights(class, override)
-	if type(override) == "table" and #override > 0 then
-		local weights = {}
-		for i, key in ipairs(override) do
-			weights[key] = Rules.OVERRIDE_WEIGHTS[i] or Rules.OVERRIDE_WEIGHTS[#Rules.OVERRIDE_WEIGHTS]
-		end
-		return weights, "override"
-	end
-	local profile = Rules.WEIGHTS[class or ""]
+-- Stat weights for the player: the character's SELECTED profile (SPECS/STAT_PROFILES.md).
+-- Returns a copy with zero-weight keys dropped (a 0 in a profile means "ignored", and the
+-- scorer treats absent and 0 the same), and the source: "builtin" | "custom" | "unknown".
+function Rules.Weights(class)
+	local profile = Rules.SelectedProfile(class)
 	if not profile then return { STAMINA = 0.5 }, "unknown" end
-	local weights, source = {}, "class"
-	for key, value in pairs(profile) do weights[key] = value end
-	local user = NS.db and NS.db.statWeights and NS.db.statWeights[class]
-	if user then
-		for key, value in pairs(user) do
-			if type(value) == "number" then weights[key] = value > 0 and value or nil; source = "grid" end
-		end
+	local weights = {}
+	for key, value in pairs(profile.weights) do
+		if type(value) == "number" and value > 0 then weights[key] = value end
 	end
-	return weights, source
+	return weights, profile.builtin and "builtin" or "custom"
 end
 
 function Rules.Player()
 	local class = Rules.Class()
 	local level = Rules.Level()
-	local override = NS.chardb and NS.chardb.stats or nil
-	local weights, source = Rules.Weights(class, override)
+	local weights, source = Rules.Weights(class)
 	local talents = (class == "HUNTER") and Rules.Talents() or nil
 	return {
 		class = class,
@@ -514,51 +640,27 @@ function Rules.WeaponName(subclass)
 end
 
 --------------------------------------------------------------------------------
--- `/qam stats <stat>...` and status output.
+-- `/qam profile [name]` (alias `/qam stats`) and status output.
 --------------------------------------------------------------------------------
-function Rules.ParseStatList(text)
-	local keys, unknown = {}, {}
-	for word in tostring(text or ""):gmatch("[^%s,]+") do
-		local key = Rules.STAT_ALIASES[word:lower()] or Rules.STAT_ALIASES[word]
-		if not key then
-			local upper = word:upper()
-			for _, k in ipairs(Rules.STAT_KEYS) do
-				if k == upper then key = k end
-			end
-			for _, k in ipairs(Rules.EXTRA_KEYS) do
-				if k == upper then key = k end
-			end
-		end
-		if key then
-			local dup = false
-			for _, k in ipairs(keys) do if k == key then dup = true end end
-			if not dup then keys[#keys + 1] = key end
-		else
-			unknown[#unknown + 1] = word
-		end
-	end
-	return keys, unknown
-end
-
-function Rules.StatsCommand(rest)
+function Rules.ProfileCommand(rest)
 	rest = tostring(rest or ""):match("^%s*(.-)%s*$")
+	local class = Rules.Class()
 	if rest == "" then
 		Rules.PrintProfile()
+		local names = {}
+		for _, p in ipairs(Rules.Profiles(class)) do names[#names + 1] = p.name end
+		NS.Print(L["Profiles for %s: %s"], tostring(class), table.concat(names, " | "))
 		return
 	end
-	if rest:lower() == "default" or rest:lower() == "reset" or rest:lower() == "class" then
-		NS.chardb.stats = nil
-		NS.Print(L["Stat preference: back to the %s profile."], Rules.Class() or "?")
-		Rules.PrintProfile()
+	local p = Rules.FindProfile(class, rest)
+	if not p then
+		local names = {}
+		for _, q in ipairs(Rules.Profiles(class)) do names[#names + 1] = q.name end
+		NS.Print(L["No profile matches '%s'. Profiles: %s"], rest, table.concat(names, " | "))
 		return
 	end
-	local keys, unknown = Rules.ParseStatList(rest)
-	if #unknown > 0 then
-		NS.Print(L["Unknown stat: %s"], table.concat(unknown, ", "))
-	end
-	if #keys > 0 then
-		NS.chardb.stats = keys
-	end
+	Rules.SelectProfile(p.id)
+	NS.OnSettingsChanged()
 	Rules.PrintProfile()
 end
 
@@ -573,8 +675,9 @@ function Rules.PrintProfile()
 	end)
 	local names = {}
 	for i = 1, math.min(5, #ordered) do names[#names + 1] = Rules.StatName(ordered[i].key) end
+	local profile = Rules.SelectedProfile(player.class)
 	NS.Print(L["Profile: %s level %d wears %s; stats wanted: %s%s"], tostring(player.class), player.level, armour,
-		table.concat(names, ", "), player.weightsSource == "override" and (" (" .. L["set with /qam stats"] .. ")") or "")
+		table.concat(names, ", "), profile and (" (" .. profile.name .. ")") or "")
 	NS.Print(L["Weapon kind when both are offered: %s"], player.weaponKind and L[player.weaponKind] or L["no preference"])
 	if player.talents and player.talents.source == "traits" then
 		local bits = {}

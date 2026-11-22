@@ -1,8 +1,12 @@
--- Quest Automator: the stat-weight editor. One column of stats for the CURRENT
--- class: name, an edit box with the effective weight, and the class default in
--- grey when the player has changed it. Values are stored per class, account wide
--- (NS.db.statWeights[class][key], Rules.SetUserWeight); only the class being
--- played is shown, the others keep their defaults until that character edits them.
+-- Quest Automator: the stat-weight editor (SPECS/STAT_PROFILES.md). The grid shows
+-- the character's SELECTED stat profile: name, an edit box with the profile's weight,
+-- and - on a custom profile - the forked-from built-in's value greyed behind it.
+--
+-- Editing a cell of a BUILT-IN profile forks it: a "Custom: <name>" copy is created
+-- with the edit applied and this character is switched to it; the built-in is never
+-- touched. Editing a custom profile edits it in place (every character on that
+-- profile sees the change - it is one shared row). Custom profiles are account-wide;
+-- the selection is per character.
 --
 -- Returns a widget that fits the Settings.lua section API (Layout(width) -> height,
 -- Update()), so Settings.lua only adds it to a section.
@@ -28,6 +32,32 @@ local function FormatWeight(v)
 	if v == math.floor(v) then return tostring(v) end
 	return (string.format("%.2f", v):gsub("0+$", ""):gsub("%.$", ""))
 end
+
+-- The profile the grid edits. Writing to a built-in forks it first (owner rule) and
+-- moves this character onto the fork. Returns the profile written to, or nil.
+local function EditableProfile(class)
+	local p = Rules.SelectedProfile(class)
+	if not p then return nil end
+	if p.builtin then
+		local fork = Rules.ForkProfile(p.id)
+		if not fork then return nil end
+		Rules.SelectProfile(fork.id)
+		return fork
+	end
+	return p
+end
+StatWeights.EditableProfile = EditableProfile
+
+-- Set one weight on the selected profile (forking a built-in). nil clears the cell
+-- back to the base value - on a custom profile that is the forked-from built-in's.
+local function WriteWeight(class, key, value)
+	local p = EditableProfile(class)
+	if not p then return false end
+	if value == nil then value = Rules.ProfileBaseWeight(p.id, key) end
+	-- a cell back at its base value stays explicit in the row: the row is COMPLETE, by design
+	return Rules.SetProfileWeight(p.id, key, value)
+end
+StatWeights.WriteWeight = WriteWeight
 
 -- One stat row: label | [edit] | default-in-grey
 local function BuildRow(parent, entry, onChanged)
@@ -58,7 +88,7 @@ local function BuildRow(parent, entry, onChanged)
 		if not class then return end
 		local text = box:GetText() or ""
 		if text:match("^%s*$") then
-			Rules.SetUserWeight(class, entry.key, nil) -- cleared: back to the default
+			WriteWeight(class, entry.key, nil) -- cleared: back to the base value
 			row:Update()
 			if onChanged then onChanged() end
 			return
@@ -68,7 +98,7 @@ local function BuildRow(parent, entry, onChanged)
 			row:Update()
 			return
 		end
-		Rules.SetUserWeight(class, entry.key, v)
+		WriteWeight(class, entry.key, v)
 		row:Update()
 		if onChanged then onChanged() end
 	end
@@ -86,14 +116,19 @@ local function BuildRow(parent, entry, onChanged)
 	row.Box:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 	function row:Update()
 		local class = Rules.Class()
-		local default = Rules.DefaultWeight(class, entry.key)
-		local user = Rules.UserWeight(class, entry.key)
-		-- The box holds only what the player typed; the default sits behind it in grey.
-		self.Placeholder:SetText(default > 0 and FormatWeight(default) or "")
-		if user ~= nil then
-			self.Box:SetText(FormatWeight(user))
+		local p = Rules.SelectedProfile(class)
+		local value = p and p.weights[entry.key] or 0
+		local base = p and Rules.ProfileBaseWeight(p.id, entry.key) or 0
+		-- Built-in: the value sits in the box as-is, nothing greyed. Custom: a cell that
+		-- differs from the forked-from built-in shows its value in the box and the base
+		-- greyed behind it; a cell equal to the base shows the base greyed only.
+		local changed = p and not p.builtin and value ~= base
+		self.Placeholder:SetText(base > 0 and FormatWeight(base) or "")
+		if p and (p.builtin or changed) then
+			self.Box:SetText(value > 0 and FormatWeight(value) or (changed and "0" or ""))
 			self.Label:SetTextColor(1, 0.82, 0)
-			if user > 0 then self.Box:SetTextColor(1, 1, 1) else self.Box:SetTextColor(0.5, 0.5, 0.5) end
+			if not changed then self.Label:SetTextColor(1, 1, 1) end
+			if value > 0 then self.Box:SetTextColor(1, 1, 1) else self.Box:SetTextColor(0.5, 0.5, 0.5) end
 		else
 			self.Box:SetText("")
 			self.Label:SetTextColor(1, 1, 1)
@@ -113,10 +148,10 @@ function StatWeights.Build(parent, onChanged)
 	holder.Intro:SetWordWrap(true)
 	holder.Reset = CreateFrame("Button", nil, holder, "UIPanelButtonTemplate")
 	holder.Reset:SetSize(140, 22)
-	holder.Reset:SetText(L["Reset to class defaults"])
+	holder.Reset:SetText(L["Reset this profile"])
 	holder.Reset:SetScript("OnClick", function()
-		local class = Rules.Class()
-		if class then Rules.ResetUserWeights(class) end
+		local p = Rules.SelectedProfile(Rules.Class())
+		if p and not p.builtin then Rules.ResetProfile(p.id) end
 		holder:Update()
 		if onChanged then onChanged() end
 	end)
@@ -127,7 +162,10 @@ function StatWeights.Build(parent, onChanged)
 	function holder:Update()
 		local class = Rules.Class() or "?"
 		local localized = NS.SafeString(select(1, NS.Call("UnitClass", "player"))) or class
-		self.Intro:SetText(string.format(L["Stat values for your %s. One point of each stat is worth this much; a reward's value is the sum, compared with what you wear in the same slot. Changed values are shown in gold."], localized))
+		local p = Rules.SelectedProfile(class)
+		self.Intro:SetText(string.format(L["Stat values for your %s - profile: %s. One point of each stat is worth this much; a reward's value is the sum, compared with what you wear in the same slot. Editing a built-in profile makes a custom copy; changed values are shown in gold."], localized, p and p.name or "?"))
+		-- Reset only means something on a custom profile (back to its built-in).
+		if self.Reset.SetEnabled then self.Reset:SetEnabled(p ~= nil and not p.builtin) end
 		for _, row in ipairs(self.statRows) do row:Update() end
 	end
 	function holder:Layout(availableWidth)

@@ -262,16 +262,22 @@ function NS.InitDB()
 	-- Stats of random-suffix auction listings learned from hovered tooltips (AuctionScore):
 	-- "itemID:itemLevel:suffix" -> { STAT_KEY = amount, ... }. Item data, not state: account-wide, kept.
 	db.suffixStats = type(db.suffixStats) == "table" and db.suffixStats or {}
+	-- Custom stat profiles (SPECS/STAT_PROFILES.md): account-wide; built-ins are code.
+	db.statProfiles = type(db.statProfiles) == "table" and db.statProfiles or {}
+	db.statProfileNextID = type(db.statProfileNextID) == "number" and db.statProfileNextID or 1
+	db.statProfileMigrated = type(db.statProfileMigrated) == "table" and db.statProfileMigrated or {}
 	NS.db = db
 
 	local cdb = LoadedTable(QuestAutomatorCharDB) or {}
 	NS.charSource = LoadedTable(QuestAutomatorCharDB) and "character" or "fresh"
 	QuestAutomatorCharDB = cdb
 	cdb.version = 1
-	cdb.stats = type(cdb.stats) == "table" and cdb.stats or nil -- list of stat keys overriding the class profile
+	cdb.stats = nil -- removed 2026-11-22: the /qam stats list override; profiles replace it
+	cdb.statProfileID = type(cdb.statProfileID) == "string" and cdb.statProfileID or nil -- this character's selected profile; nil = class leveling default
 	cdb.counts = CopyDefaults(type(cdb.counts) == "table" and cdb.counts or {}, { accepted = 0, turnedIn = 0, chosen = 0, left = 0 })
 	NS.chardb = cdb
 	NS.loaded = true
+	-- Rules loads after Core; the migration runs from PLAYER_LOGIN below once both are up.
 end
 
 --------------------------------------------------------------------------------
@@ -348,7 +354,7 @@ local function PrintHelp()
 	NS.Print(L["/qam accept|turnin|trivial|repeatable|party|announce on|off - toggle one behaviour"])
 	NS.Print(L["/qam reward fit|value|manual - how the reward is chosen"])
 	NS.Print(L["/qam quality <1-5|off> - a reward of this quality or better is left to you (3 = rare)"])
-	NS.Print(L["/qam stats <stat> [<stat>...] | default - the stats this character wants, most important first"])
+	NS.Print(L["/qam profile [name] - show or switch this character's stat profile (alias: /qam stats)"])
 	NS.Print(L["/qam ignore [npc|quest] - never automate the NPC or quest in front of you"])
 	NS.Print(L["/qam ignore list | unignore <id> - review or clear the ignore lists"])
 	NS.Print(L["/qam status - what would happen right now and why"])
@@ -513,8 +519,8 @@ SlashCmdList["QUESTAUTOMATOR"] = function(msg)
 		end
 		NS.Print("%s: %s", L["Left to me from quality"], s.manualQuality >= 0 and NS.QualityName(s.manualQuality) or L["never"])
 		NS.OnSettingsChanged()
-	elseif cmd == "stats" or cmd == "stat" then
-		NS.Rules.StatsCommand(rest)
+	elseif cmd == "profile" or cmd == "profiles" or cmd == "stats" or cmd == "stat" then
+		NS.Rules.ProfileCommand(rest)
 	elseif cmd == "ignore" then
 		NS.Auto.IgnoreCommand(rest)
 	elseif cmd == "unignore" then
@@ -571,4 +577,18 @@ end
 NS.RegisterEvent("ADDON_LOADED", function(name)
 	if name ~= ADDON then return end
 	NS.InitDB()
+end)
+
+-- Stat profiles need Rules (loaded after Core): fold the legacy per-cell overrides into a
+-- custom profile once, then point a character with no selection at its class's migrated
+-- profile so an edited grid keeps behaving as it did before the upgrade.
+NS.RegisterEvent("PLAYER_LOGIN", function()
+	local Rules = NS.Rules
+	if not (NS.loaded and Rules and Rules.MigrateLegacyWeights) then return end
+	Rules.MigrateLegacyWeights()
+	local class = Rules.Class()
+	local migrated = class and NS.db.statProfileMigrated and NS.db.statProfileMigrated[class]
+	if migrated and not NS.chardb.statProfileID and Rules.Profile(migrated) then
+		NS.chardb.statProfileID = migrated
+	end
 end)
