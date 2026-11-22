@@ -69,29 +69,61 @@ local function Key(itemID, itemLevel, itemSuffix, link)
 	return tostring(itemID) .. ":" .. tostring(itemLevel or 0) .. ":" .. tostring(itemSuffix or 0)
 end
 
--- Stats of the listing. A suffixed listing ("Medicine Staff of Power") needs the
--- itemKey tooltip WITH the required level: C_TooltipInfo.GetItemKey(itemID, itemLevel,
--- itemSuffix, requiredLevel). Without the 4th argument the client cannot resolve the
--- random-suffix roll and returns the GROUP summary ("Items in this group may vary in
--- stats...") - DPS only, no stat lines - so every "of X" variant scored the same
--- (owner 2026-11-22: twenty staffs, all +12.5). Blizzard's own hover tooltip passes
--- C_AuctionHouse.GetItemKeyRequiredLevel(itemKey) as that argument; so do we. A
--- bare-itemID link (C_Item.GetItemInfo(itemID), or item:ID::::::suffix) carries no
--- suffix at all, so it is only used for unsuffixed listings. A suffixed listing with
--- no resolvable tooltip returns nil = pending and is never cached.
+-- Stats of the listing. A suffixed listing ("Medicine Staff of Power") cannot be read
+-- through the DATA tooltip API: C_TooltipInfo.GetItemKey(itemID, itemLevel, itemSuffix,
+-- requiredLevel) returns the browse GROUP summary ("Items in this group may vary in
+-- stats and appearance") with DPS only and no stat lines, even with requiredLevel
+-- supplied (verified on Forever 1.60.1 build 71037, 2026-11-22: every suffix of every
+-- weapon group). A bare-itemID link carries no suffix at all. The one path that does
+-- resolve the roll is the GameTooltip WIDGET: GameTooltip:SetItemKey(itemID, itemLevel,
+-- itemSuffix, requiredLevel) - which is exactly what Blizzard's hover tooltip calls
+-- (AuctionHouseUtil.SetAuctionHouseTooltip). So a hidden scanning tooltip is fed the
+-- key and its lines are parsed. A suffixed listing with no resolvable lines returns
+-- nil = pending and is never cached.
+local scanTip
+local function ScanTooltip()
+	if scanTip then return scanTip end
+	scanTip = CreateFrame("GameTooltip", "QuestAutomatorAuctionScanTooltip", UIParent, "GameTooltipTemplate")
+	scanTip:SetOwner(UIParent, "ANCHOR_NONE")
+	return scanTip
+end
+
+-- Lines of the scanning tooltip as a TooltipData-shaped table { lines = { {leftText, rightText}... } },
+-- so Rewards.StatsFromTooltipData can read them unchanged.
+local function ScanTooltipLines(tip)
+	local name = tip:GetName()
+	local data = { lines = {} }
+	for i = 1, tip:NumLines() do
+		local left, right = _G[name .. "TextLeft" .. i], _G[name .. "TextRight" .. i]
+		data.lines[#data.lines + 1] = { leftText = left and left:GetText(), rightText = right and right:GetText() }
+	end
+	return data
+end
+
+function AuctionScore.SuffixedListingStats(itemID, itemLevel, itemSuffix)
+	if type(GameTooltip) ~= "table" or type(GameTooltip.SetItemKey) ~= "function" then return nil end
+	local itemKey = { itemID = itemID, itemLevel = itemLevel or 0, itemSuffix = itemSuffix or 0, battlePetSpeciesID = 0 }
+	local requiredLevel = NS.SafeNumber(NS.Call("C_AuctionHouse.GetItemKeyRequiredLevel", itemKey))
+	local tip = ScanTooltip()
+	tip:ClearLines()
+	tip:SetOwner(UIParent, "ANCHOR_NONE")
+	local ok = pcall(tip.SetItemKey, tip, itemID, itemLevel or 0, itemSuffix or 0, requiredLevel)
+	if not ok or tip:NumLines() == 0 then return nil end
+	local data = ScanTooltipLines(tip)
+	if AuctionScore.IsGroupSummary(data) then return nil end
+	return Rewards.StatsFromTooltipData(data)
+end
+
 local function ListingStats(itemID, itemLevel, itemSuffix, link)
 	if link then return Rewards.WornItemStats(link) end
 	local suffixed = (itemSuffix or 0) ~= 0
-	if suffixed or (itemLevel or 0) ~= 0 then
-		local itemKey = { itemID = itemID, itemLevel = itemLevel or 0, itemSuffix = itemSuffix or 0, battlePetSpeciesID = 0 }
-		local requiredLevel = NS.SafeNumber(NS.Call("C_AuctionHouse.GetItemKeyRequiredLevel", itemKey))
-		local data = NS.Call("C_TooltipInfo.GetItemKey", itemID, itemLevel or 0, itemSuffix or 0, requiredLevel)
+	if suffixed then
+		return AuctionScore.SuffixedListingStats(itemID, itemLevel, itemSuffix) -- nil = pending, never the base item
+	end
+	if (itemLevel or 0) ~= 0 then
+		local data = NS.Call("C_TooltipInfo.GetItemKey", itemID, itemLevel, 0)
 		local stats = data and Rewards.StatsFromTooltipData(data)
-		-- The group summary is recognisable: it has the "may vary" footer and no stat
-		-- lines beyond DPS/speed. Treat it as not-yet-resolved rather than as data.
-		if stats and suffixed and AuctionScore.IsGroupSummary(data) then stats = nil end
 		if stats then return stats end
-		if suffixed then return nil end -- pending: never score a suffixed listing as its base item
 	end
 	local _, infoLink = NS.Call("C_Item.GetItemInfo", itemID)
 	infoLink = NS.SafeString(infoLink)
