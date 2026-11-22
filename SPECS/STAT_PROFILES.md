@@ -201,15 +201,18 @@ implemented after this profile work lands - separate commit, separate owner revi
 
 ## Phases
 
-- [ ] **P1 Rules**: `BUILTIN_PROFILES`, the API above, `Rules.Weights` reads the selected profile;
+- [x] **P1 Rules** (`9d339a8`): `BUILTIN_PROFILES`, the API above, `Rules.Weights` reads the selected profile;
       `InitDB` storage + migration; `/qam stats` repointed. Pure tests for fork/edit/rename/delete/
       reset/migration (`tests/stat_profiles.lua`). Existing suites still pass.
-- [ ] **P2 UI**: radio group + edit-name + delete in `UI/StatWeights.lua`; grid bound to the
-      selected profile; fork-on-first-edit; `ui_smoke` coverage.
-- [ ] **P2b Switchers**: `UI/ProfileSwitch.lua` (one control, two styles); pick-window label row;
-      AH bubble left of the search box per provider; `OnSettingsChanged` fan-out; `/qam profile`.
-- [ ] **P3 Built-in rows**: owner reviews the non-leveling rows (TBD below) and the Druid/Paladin
-      leveling rows; one commit.
+- [x] **P2 UI** (`ae78aa4`, `1b75a4a`): radio group + rename + delete in `UI/StatWeights.lua`; grid
+      bound to the selected profile; fork only on a REAL change (a value equal to the placeholder, or
+      an empty box on a built-in, is a no-op); `ui_smoke` coverage.
+- [x] **P2b Switchers** (`9bfd58d`): `UI/ProfileSwitch.lua` (one control, two styles); pick-window
+      label row; AH bubble left of the search box (Forever: search-box frame probed from a candidate
+      list, `/qam debug` reports the anchor); `OnSettingsChanged` fan-out; `/qam profile`; setting
+      `profileSwitchers` (default on) hides both switchers for one-spec players.
+- [ ] **P3 Built-in rows**: SHAMAN ships Enhancement / Elemental / Restoration as deltas over the
+      leveling row (`1b75a4a`, PROPOSED numbers awaiting owner review). Other eight classes: TBD.
 - [ ] **P4 Dual-wield factor** (own spec paragraph above; after P1-P3).
 
 ## Open questions / TBD
