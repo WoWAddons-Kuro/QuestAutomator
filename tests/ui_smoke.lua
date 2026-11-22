@@ -43,6 +43,8 @@ function methods:SetChecked(value) self.checked = value end
 function methods:GetChecked() return self.checked end
 function methods:SetValue(value) self.value = value; if self.scripts.OnValueChanged then self.scripts.OnValueChanged(self, value) end end
 function methods:GetValue() return self.value end
+function methods:SetEnabled(on) self.enabled = on and true or false end
+function methods:IsEnabled() return self.enabled ~= false end
 function methods:SetVerticalScroll(value) self.scroll = value end
 function methods:GetVerticalScroll() return self.scroll or 0 end
 function methods:GetVerticalScrollRange() return 2000 end
@@ -60,7 +62,7 @@ function methods:CreateFontString() return region(self) end
 function methods:AddLine(text) self.lines = self.lines or {}; self.lines[#self.lines + 1] = text end
 function methods:AddDoubleLine(a, b) self:AddLine(a .. " " .. b) end
 function methods:SetOwner() self.lines = {} end
-for _, method in ipairs({"RegisterEvent", "SetAllPoints", "SetBackdrop", "SetBackdropColor", "SetBackdropBorderColor", "SetFrameStrata", "SetFrameLevel", "SetMovable", "EnableMouse", "RegisterForDrag", "SetClampedToScreen", "SetJustifyH", "SetWordWrap", "SetTextColor", "RegisterForClicks", "SetTexCoord", "SetTexture", "SetColorTexture", "SetMinMaxValues", "SetValueStep", "SetObeyStepOnDrag", "EnableMouseWheel", "SetScrollChild", "StartMoving", "StopMovingOrSizing", "SetHighlightTexture", "SetDesaturated", "SetVertexColor", "SetHyperlink", "SetItemByID", "SetBlendMode", "SetAutoFocus", "SetNumeric", "SetMaxLetters", "ClearFocus"}) do methods[method] = noop end
+for _, method in ipairs({"RegisterEvent", "SetAllPoints", "SetBackdrop", "SetBackdropColor", "SetBackdropBorderColor", "SetFrameStrata", "SetFrameLevel", "SetMovable", "EnableMouse", "RegisterForDrag", "SetClampedToScreen", "SetJustifyH", "SetWordWrap", "SetTextColor", "RegisterForClicks", "SetTexCoord", "SetTexture", "SetColorTexture", "SetMinMaxValues", "SetValueStep", "SetObeyStepOnDrag", "EnableMouseWheel", "SetScrollChild", "StartMoving", "StopMovingOrSizing", "SetHighlightTexture", "SetDesaturated", "SetVertexColor", "SetHyperlink", "SetItemByID", "SetBlendMode", "SetAutoFocus", "SetNumeric", "SetMaxLetters", "ClearFocus", "SetFocus", "HighlightText"}) do methods[method] = noop end
 function CreateFrame(kind, name, parent, template)
 	local f = region(parent, name)
 	frames[#frames + 1] = f
@@ -323,6 +325,47 @@ NS.InitDB(); NS.PrePickModel.Initialize(); NS.UIState.Initialize()
 assert(NS.PrePick.Get(101) == 5191 and NS.PrePick.Get(202) == 19024)
 assert(NS.db.settings.weaponProficiency == "usable")
 print("PASS supported/placeholder setting callbacks and saved-state reinitialization")
+
+-- Stat profile selector (SPECS/STAT_PROFILES.md): the radio group above the grid.
+-- Priest here: one built-in row; editing a grid cell forks it; the fork gets a radio
+-- with [rename] [delete]; selecting a radio switches this character; delete falls back.
+do
+	local selector
+	for _, f in ipairs(frames) do if f.profileRows then selector = f end end
+	assert(selector, "profile selector not built")
+	QuestAutomatorOptions:Update()
+	assert(selector.count == 1 and selector.profileRows[1].profile.id == "PRIEST:leveling")
+	assert(selector.profileRows[1].Radio:GetChecked() and not selector.profileRows[1].Rename:IsShown(), "built-in has no rename/delete")
+	-- edit a grid cell -> forks to Custom: Priest Shadow Leveling and switches to it
+	local cell
+	for _, f in ipairs(frames) do if f.key == "INTELLECT" and f.Box then cell = f end end
+	assert(cell, "INTELLECT grid row not found")
+	cell.Box:SetText("2.5"); cell.Box.scripts.OnEnterPressed(cell.Box)
+	local sel = NS.Rules.SelectedProfile("PRIEST")
+	assert(not sel.builtin and sel.name == "Custom: Priest Shadow Leveling" and sel.weights.INTELLECT == 2.5)
+	assert(NS.Rules.Profile("PRIEST:leveling").weights.INTELLECT == 1.6, "built-in untouched by the edit")
+	QuestAutomatorOptions:Update()
+	assert(selector.count == 2 and selector.profileRows[2].profile.id == sel.id and selector.profileRows[2].Radio:GetChecked())
+	assert(selector.profileRows[2].Rename:IsShown() and selector.profileRows[2].Delete:IsShown())
+	-- rename inline: Enter commits
+	local r2 = selector.profileRows[2]
+	r2.Rename.scripts.OnClick(r2.Rename)
+	assert(r2.NameBox:IsShown() and not r2.Name:IsShown())
+	r2.NameBox:SetText("Shadow PvE"); r2.NameBox.scripts.OnEnterPressed(r2.NameBox)
+	assert(sel.name == "Shadow PvE" and not r2.NameBox:IsShown())
+	-- select the built-in radio again -> character switches, custom survives
+	selector.profileRows[1].Radio.scripts.OnClick(selector.profileRows[1].Radio)
+	assert(NS.Rules.SelectedProfile("PRIEST").id == "PRIEST:leveling" and NS.Rules.Profile(sel.id))
+	QuestAutomatorOptions:Update()
+	assert(selector.profileRows[1].Radio:GetChecked() and not selector.profileRows[2].Radio:GetChecked())
+	-- delete the custom -> gone from the list
+	selector.profileRows[2].Delete.scripts.OnClick(selector.profileRows[2].Delete)
+	QuestAutomatorOptions:Update()
+	assert(selector.count == 1 and NS.Rules.Profile(sel.id) == nil)
+	-- Reset button is disabled on a built-in (nothing to reset)
+	for _, f in ipairs(frames) do if f.statRows then assert(f.Reset.enabled == false, "Reset enabled on a built-in") end end
+	print("PASS stat profile selector: fork on edit, rename, switch, delete, reset gating")
+end
 
 -- Unsupported settings and UI storage cannot alter the original reward policy.
 local choices = NS.Rewards.Gather(2)

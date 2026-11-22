@@ -138,6 +138,140 @@ local function BuildRow(parent, entry, onChanged)
 	return row
 end
 
+--------------------------------------------------------------------------------
+-- Profile selector: one radio per profile this class has (built-ins, then customs),
+-- a [rename] and [delete] after each custom. Selecting switches THIS character and
+-- re-reads the grid. Rename is an inline edit box on the same row; Enter commits,
+-- Escape cancels, blur commits. Rows are rebuilt on Update because customs come and go.
+--------------------------------------------------------------------------------
+StatWeights.PROFILE_ROW_HEIGHT = 20
+
+local function BuildProfileRow(parent, onChanged)
+	local row = CreateFrame("Frame", nil, parent)
+	row:SetHeight(StatWeights.PROFILE_ROW_HEIGHT)
+	row.Radio = CreateFrame("CheckButton", nil, row, "UIRadioButtonTemplate")
+	row.Radio:SetSize(16, 16)
+	row.Radio:SetPoint("LEFT", row, "LEFT", 4, 0)
+	row.Name = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+	row.Name:SetPoint("LEFT", row.Radio, "RIGHT", 4, 0)
+	row.Name:SetJustifyH("LEFT")
+	row.Name:SetWordWrap(false)
+	-- inline rename box, hidden until [rename]
+	row.NameBox = CreateFrame("EditBox", nil, row, "InputBoxTemplate")
+	row.NameBox:SetSize(220, 18)
+	row.NameBox:SetPoint("LEFT", row.Radio, "RIGHT", 8, 0)
+	row.NameBox:SetAutoFocus(false)
+	row.NameBox:SetMaxLetters(40)
+	row.NameBox:Hide()
+	local function Action(label)
+		local b = CreateFrame("Button", nil, row)
+		b:SetHeight(16)
+		b.text = b:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+		b.text:SetPoint("LEFT", b, "LEFT", 0, 0)
+		b.text:SetText("[" .. label .. "]")
+		b:SetWidth(math.max(20, b.text:GetStringWidth()))
+		b:SetScript("OnEnter", function(self) self.text:SetTextColor(1, 1, 1) end)
+		b:SetScript("OnLeave", function(self) self.text:SetTextColor(1, 0.82, 0) end)
+		b.text:SetTextColor(1, 0.82, 0)
+		return b
+	end
+	row.Rename = Action(L["rename"])
+	row.Delete = Action(L["delete"])
+	row.Rename:SetPoint("LEFT", row.Name, "RIGHT", 10, 0)
+	row.Delete:SetPoint("LEFT", row.Rename, "RIGHT", 8, 0)
+
+	local function Select()
+		if not row.profile then return end
+		Rules.SelectProfile(row.profile.id)
+		NS.OnSettingsChanged()
+		if onChanged then onChanged() end
+	end
+	row.Radio:SetScript("OnClick", Select)
+
+	local function CommitRename()
+		local p = row.profile
+		row.NameBox:Hide(); row.Name:Show(); row.Rename:Show(); row.Delete:Show()
+		if p and not p.builtin then Rules.RenameProfile(p.id, row.NameBox:GetText()) end
+		if onChanged then onChanged() end
+	end
+	row.Rename:SetScript("OnClick", function()
+		if not row.profile or row.profile.builtin then return end
+		row.NameBox:SetText(row.profile.name)
+		row.Name:Hide(); row.Rename:Hide(); row.Delete:Hide()
+		row.NameBox:Show()
+		row.NameBox:SetFocus()
+		row.NameBox:HighlightText()
+	end)
+	row.NameBox:SetScript("OnEnterPressed", function(self) CommitRename(); self:ClearFocus() end)
+	row.NameBox:SetScript("OnEditFocusLost", CommitRename)
+	row.NameBox:SetScript("OnEscapePressed", function(self)
+		self:Hide(); row.Name:Show(); row.Rename:Show(); row.Delete:Show(); self:ClearFocus()
+	end)
+	row.Delete:SetScript("OnClick", function()
+		local p = row.profile
+		if not p or p.builtin then return end
+		Rules.DeleteProfile(p.id)
+		NS.OnSettingsChanged()
+		if onChanged then onChanged() end
+	end)
+
+	function row:Set(profile, selected)
+		self.profile = profile
+		self.Radio:SetChecked(selected and true or false)
+		self.Name:SetText(profile.name)
+		self.Name:SetTextColor(1, 1, 1)
+		if profile.builtin then
+			self.Rename:Hide(); self.Delete:Hide()
+		else
+			self.Rename:Show(); self.Delete:Show()
+		end
+		self.NameBox:Hide(); self.Name:Show()
+		self:Show()
+	end
+	return row
+end
+
+-- The selector widget: fits the section API like the grid does. Owns a pool of rows.
+function StatWeights.BuildProfileSelector(parent, onChanged)
+	local holder = CreateFrame("Frame", nil, parent)
+	holder:SetHeight(1)
+	holder.Title = holder:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+	holder.Title:SetPoint("TOPLEFT", holder, "TOPLEFT", 4, 0)
+	holder.Title:SetJustifyH("LEFT")
+	holder.Title:SetText(L["Stat profile for this character"])
+	holder.profileRows = {}
+	local function Row(i)
+		local r = holder.profileRows[i]
+		if not r then r = BuildProfileRow(holder, onChanged); holder.profileRows[i] = r end
+		return r
+	end
+	function holder:Update()
+		local class = Rules.Class()
+		local selected = Rules.SelectedProfile(class)
+		local list = Rules.Profiles(class)
+		for i, p in ipairs(list) do Row(i):Set(p, selected and selected.id == p.id) end
+		for i = #list + 1, #self.profileRows do self.profileRows[i]:Hide() end
+		self.count = #list
+	end
+	function holder:Layout(availableWidth)
+		self:SetWidth(availableWidth)
+		local y = self.Title:GetStringHeight() + 6
+		for i = 1, (self.count or 0) do
+			local r = self.profileRows[i]
+			r:ClearAllPoints()
+			r:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -y)
+			r:SetWidth(availableWidth)
+			-- the name may be long; leave room for [rename] [delete]
+			r.Name:SetWidth(math.max(60, availableWidth - 24 - 8 - 130))
+			y = y + StatWeights.PROFILE_ROW_HEIGHT + 2
+		end
+		y = y + 6
+		self:SetHeight(y)
+		return y
+	end
+	return holder
+end
+
 -- The widget Settings.lua embeds. onChanged runs after any edit (refresh the page).
 function StatWeights.Build(parent, onChanged)
 	local holder = CreateFrame("Frame", nil, parent)

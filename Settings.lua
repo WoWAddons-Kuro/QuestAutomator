@@ -332,6 +332,8 @@ local function Build()
 	-- Section: Stat values for the current class (UI/StatWeights.lua)
 	if NS.StatWeights then
 		local sw = Section(L["Stat values"])
+		-- the profile radio group sits above the grid: pick which row the grid edits
+		sw:Add(NS.StatWeights.BuildProfileSelector(sw, Changed), 40)
 		sw:Add(NS.StatWeights.Build(sw, Changed), 40)
 		sw:Finish()
 	end
