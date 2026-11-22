@@ -70,18 +70,26 @@ local function Key(itemID, itemLevel, itemSuffix, link)
 end
 
 -- Stats of the listing. A suffixed listing ("Medicine Staff of Power") needs the
--- itemKey tooltip: the link GetItemInfo builds from a bare itemID has NO suffix, so
--- falling back to it scores the stat-less base weapon and every "of X" variant gets
--- the same number (owner 2026-11-22: twenty staffs, all +12.5). When the keyed
--- tooltip has not loaded yet, return nil = pending; the provider retries on
--- ITEM_KEY_ITEM_INFO_RECEIVED / GET_ITEM_INFO_RECEIVED. Only an unsuffixed listing
--- may use the bare-itemID path.
+-- itemKey tooltip WITH the required level: C_TooltipInfo.GetItemKey(itemID, itemLevel,
+-- itemSuffix, requiredLevel). Without the 4th argument the client cannot resolve the
+-- random-suffix roll and returns the GROUP summary ("Items in this group may vary in
+-- stats...") - DPS only, no stat lines - so every "of X" variant scored the same
+-- (owner 2026-11-22: twenty staffs, all +12.5). Blizzard's own hover tooltip passes
+-- C_AuctionHouse.GetItemKeyRequiredLevel(itemKey) as that argument; so do we. A
+-- bare-itemID link (C_Item.GetItemInfo(itemID), or item:ID::::::suffix) carries no
+-- suffix at all, so it is only used for unsuffixed listings. A suffixed listing with
+-- no resolvable tooltip returns nil = pending and is never cached.
 local function ListingStats(itemID, itemLevel, itemSuffix, link)
 	if link then return Rewards.WornItemStats(link) end
 	local suffixed = (itemSuffix or 0) ~= 0
 	if suffixed or (itemLevel or 0) ~= 0 then
-		local data = NS.Call("C_TooltipInfo.GetItemKey", itemID, itemLevel or 0, itemSuffix or 0)
+		local itemKey = { itemID = itemID, itemLevel = itemLevel or 0, itemSuffix = itemSuffix or 0, battlePetSpeciesID = 0 }
+		local requiredLevel = NS.SafeNumber(NS.Call("C_AuctionHouse.GetItemKeyRequiredLevel", itemKey))
+		local data = NS.Call("C_TooltipInfo.GetItemKey", itemID, itemLevel or 0, itemSuffix or 0, requiredLevel)
 		local stats = data and Rewards.StatsFromTooltipData(data)
+		-- The group summary is recognisable: it has the "may vary" footer and no stat
+		-- lines beyond DPS/speed. Treat it as not-yet-resolved rather than as data.
+		if stats and suffixed and AuctionScore.IsGroupSummary(data) then stats = nil end
 		if stats then return stats end
 		if suffixed then return nil end -- pending: never score a suffixed listing as its base item
 	end
@@ -89,6 +97,20 @@ local function ListingStats(itemID, itemLevel, itemSuffix, link)
 	infoLink = NS.SafeString(infoLink)
 	if not infoLink then return nil end -- not loaded yet
 	return Rewards.WornItemStats(infoLink)
+end
+
+-- The itemKey tooltip of a browse GROUP (unresolved suffix) ends with
+-- AUCTION_HOUSE_TOOLTIP_ITEM_KEY_GROUP ("Items in this group may vary in stats and
+-- appearance..."). Matching on the global string keeps this locale-safe.
+function AuctionScore.IsGroupSummary(data)
+	local footer = _G.AUCTION_HOUSE_TOOLTIP_ITEM_KEY_GROUP or _G.AUCTION_HOUSE_ITEM_KEY_GROUP_TOOLTIP
+	for _, line in ipairs(type(data) == "table" and data.lines or {}) do
+		local text = NS.SafeString(line.leftText)
+		if text and ((footer and text == footer) or text:find("may vary in stats", 1, true)) then
+			return true
+		end
+	end
+	return false
 end
 
 function AuctionScore.Score(itemID, itemLevel, itemSuffix, link)
