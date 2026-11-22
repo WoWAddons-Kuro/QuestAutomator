@@ -69,15 +69,21 @@ local function Key(itemID, itemLevel, itemSuffix, link)
 	return tostring(itemID) .. ":" .. tostring(itemLevel or 0) .. ":" .. tostring(itemSuffix or 0)
 end
 
--- Stats of the listing. A suffixed listing needs the itemKey tooltip (the link
--- GetItemInfo builds from an itemID has no suffix); anything else goes through the
--- same API + tooltip merge the worn-item reader uses.
+-- Stats of the listing. A suffixed listing ("Medicine Staff of Power") needs the
+-- itemKey tooltip: the link GetItemInfo builds from a bare itemID has NO suffix, so
+-- falling back to it scores the stat-less base weapon and every "of X" variant gets
+-- the same number (owner 2026-11-22: twenty staffs, all +12.5). When the keyed
+-- tooltip has not loaded yet, return nil = pending; the provider retries on
+-- ITEM_KEY_ITEM_INFO_RECEIVED / GET_ITEM_INFO_RECEIVED. Only an unsuffixed listing
+-- may use the bare-itemID path.
 local function ListingStats(itemID, itemLevel, itemSuffix, link)
 	if link then return Rewards.WornItemStats(link) end
-	if (itemSuffix or 0) ~= 0 or (itemLevel or 0) ~= 0 then
+	local suffixed = (itemSuffix or 0) ~= 0
+	if suffixed or (itemLevel or 0) ~= 0 then
 		local data = NS.Call("C_TooltipInfo.GetItemKey", itemID, itemLevel or 0, itemSuffix or 0)
 		local stats = data and Rewards.StatsFromTooltipData(data)
 		if stats then return stats end
+		if suffixed then return nil end -- pending: never score a suffixed listing as its base item
 	end
 	local _, infoLink = NS.Call("C_Item.GetItemInfo", itemID)
 	infoLink = NS.SafeString(infoLink)
