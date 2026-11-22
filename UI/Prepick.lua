@@ -175,6 +175,14 @@ local function BuildFrame()
 	f.Notice:SetJustifyH("CENTER")
 	f.Notice:SetTextColor(1, 0.65, 0.2)
 
+	-- "Stat profile: Shaman Enhancement v" - click for the profile popup. Centred
+	-- under the notice; Render folds its height into the header when it is shown.
+	if NS.ProfileSwitch then
+		f.Profile = NS.ProfileSwitch.Create(f, "label")
+		f.Profile:SetPoint("TOP", f.Notice, "BOTTOM", 0, -4)
+		f.Profile:Hide()
+	end
+
 	f.Close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
 	f.Close:SetPoint("TOPRIGHT", f, "TOPRIGHT", 2, 2)
 	f.Close:SetScript("OnClick", function() PrePick.Dismiss() end)
@@ -517,6 +525,20 @@ function PrePick.Toggle()
 	return PrePick.OpenAny()
 end
 
+-- A stat-profile switch (from any switcher) re-scores the open window in place: the
+-- coin, the "+N" deltas and the reason line all depend on the profile's weights.
+-- Preview mode keeps its sample data; the empty window has nothing to score.
+function PrePick.OnProfileChanged()
+	if not frame or not frame:IsShown() or not state.questID or state.questID == 0 then
+		if frame and frame.Profile then frame.Profile:Update() end
+		return
+	end
+	if state.choices and not state.preview then
+		state.decision = Data.Evaluate(state.choices, NS.db.settings, Rules.Player(), state.questID)
+	end
+	PrePick.Render()
+end
+
 -- Lays the current state out. Called by Open and when a pick changes.
 function PrePick.Render()
 	if not frame or not state.questID or not state.choices then return end
@@ -535,9 +557,15 @@ function PrePick.Render()
 	frame.Later:SetText(L["Close"])
 	local picked = PrePick.Get(state.questID)
 	local player = Rules.Player()
+	-- Stat-profile switcher under the notice (SPECS/STAT_PROFILES.md). Hidden by the
+	-- profileSwitchers setting; the header grows only when it is shown.
+	local switcherHeight = 0
+	if frame.Profile and frame.Profile:Update() then
+		switcherHeight = frame.Profile:GetHeight() + 4
+	end
 	-- Quest list between the reason line and the rows: only with 2+ pending quests.
 	local pending = (not state.preview) and PrePick.PendingQuests() or {}
-	local headerHeight = 10 + frame.Title:GetStringHeight() + 4 + frame.Notice:GetStringHeight() + 12
+	local headerHeight = 10 + frame.Title:GetStringHeight() + 4 + frame.Notice:GetStringHeight() + switcherHeight + 12
 	frame.List:ClearAllPoints()
 	frame.List:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -headerHeight)
 	frame.List:SetWidth(PrePick.WIDTH - 40)

@@ -47,6 +47,39 @@ local function Paint(cell, itemKey, itemKeyInfo)
 end
 
 function provider.Install()
+	-- Stat-profile bubble left of the Browse search box (SPECS/STAT_PROFILES.md). The
+	-- search box frame path is not in our Blizzard reference extracts, so it is looked up
+	-- from a short candidate list rather than assumed; when none resolves the bubble is
+	-- skipped and /qam debug says so. Anchored RIGHT -> search box LEFT; Blizzard's layout
+	-- is not moved.
+	local function FindSearchBox()
+		local ah = AuctionHouseFrame
+		if not ah then return nil end
+		local candidates = {
+			ah.SearchBar and ah.SearchBar.SearchBox,
+			ah.BrowseResultsFrame and ah.BrowseResultsFrame.SearchBar and ah.BrowseResultsFrame.SearchBar.SearchBox,
+			ah.SearchBox,
+			_G.AuctionHouseFrameSearchBox,
+		}
+		for _, f in ipairs(candidates) do
+			if type(f) == "table" and f.GetObjectType then return f end
+		end
+		return nil
+	end
+	local function PlaceSwitcher()
+		if not NS.ProfileSwitch then return end
+		local box = FindSearchBox()
+		if not box then AuctionScore.switcherAnchor = "search box not found"; return end
+		if not AuctionScore.switcher then
+			AuctionScore.switcher = NS.ProfileSwitch.Create(box:GetParent(), "bubble")
+		end
+		AuctionScore.switcher:ClearAllPoints()
+		AuctionScore.switcher:SetPoint("RIGHT", box, "LEFT", -AuctionScore.BUBBLE_GAP - 4, 0)
+		AuctionScore.switcherAnchor = "left of search box"
+		AuctionScore.switcher:Update()
+	end
+	if AuctionHouseFrame and AuctionHouseFrame.HookScript then AuctionHouseFrame:HookScript("OnShow", PlaceSwitcher) end
+	PlaceSwitcher()
 	hooksecurefunc(AuctionHouseTableCellItemDisplayMixin, "UpdateDisplay", function(cell, itemKey, itemKeyInfo)
 		Paint(cell, itemKey, itemKeyInfo)
 	end)

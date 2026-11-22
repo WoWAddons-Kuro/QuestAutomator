@@ -84,6 +84,18 @@ function AuctionScore.Invalidate()
 	cache = {}
 end
 
+-- A stat-profile switch: every score is stale (same items, different weights). Drop the
+-- score cache - NOT the captured suffix stats, which are item data - and re-Decorate
+-- every live cell so the numbers and yellow/green states refresh without a new search.
+function AuctionScore.OnProfileChanged()
+	AuctionScore.Invalidate()
+	for cell in pairs(liveCells) do
+		if cell:IsShown() and cell.qamScoreRef then
+			AuctionScore.Decorate(cell, cell.qamScoreText, cell.qamScoreRef, cell.qamScoreNeighbour)
+		end
+	end
+	if AuctionScore.switcher then AuctionScore.switcher:Update() end
+end
 local function Key(itemID, itemLevel, itemSuffix, link)
 	if link then return link end
 	return tostring(itemID) .. ":" .. tostring(itemLevel or 0) .. ":" .. tostring(itemSuffix or 0)
@@ -450,6 +462,7 @@ function AuctionScore.DebugReport()
 		NS.Print("  AuctionScore %s: %s", name, AuctionScore.installed[name] and "|cff40ff40installed|r" or "|cff808080not installed|r")
 	end
 	NS.Print("  AuctionScore capture: %s, %d suffixed listing(s) learned this session", AuctionScore.captureInstalled and "hooked" or "not hooked", AuctionScore.CapturedCount())
+	NS.Print("  AuctionScore profile switcher: %s", AuctionScore.switcherAnchor or "not placed")
 end
 
 NS.RegisterEvent("PLAYER_LOGIN", function() AuctionScore.InstallReady(nil); AuctionScore.InstallCapture() end)

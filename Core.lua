@@ -183,6 +183,7 @@ NS.DEFAULT_SETTINGS = {
 	xpBar = true,              -- completed quests' experience on the experience bar (XPBar.lua)
 	tooltipScore = true,       -- the reward scorer's verdict on every equipment tooltip (Tooltip.lua)
 	ahScore = true,            -- "+1.2" upgrade bubble on equipment rows of the auction house browse list (AuctionScore/)
+	profileSwitchers = true,   -- stat-profile switcher in the pick window and the auction house (UI/ProfileSwitch.lua); off for one-spec players
 	minimapAngle = 190,        -- where the minimap button sits, in degrees
 	minimapAngleAuto = true,   -- pick a free spot on the ring until the player drags the button
 	settingsVersion = NS.SETTINGS_VERSION,
@@ -190,10 +191,15 @@ NS.DEFAULT_SETTINGS = {
 
 -- Called after any setting changes (slash command, settings page, menu) so the
 -- minimap icon and anything else that mirrors the settings can follow.
+-- Also the fan-out for a stat-profile switch (SPECS/STAT_PROFILES.md): every score
+-- the player can see is re-read - the open pick window, the AH bubbles, the grid.
 function NS.OnSettingsChanged()
 	if NS.UpdateMinimapIcon then NS.UpdateMinimapIcon() end
 	if NS.Glow and NS.Glow.OnSettingsChanged then NS.Glow.OnSettingsChanged() end
 	if NS.XPBar and NS.XPBar.Refresh then NS.XPBar.Refresh() end
+	if NS.PrePick and NS.PrePick.OnProfileChanged then NS.PrePick.OnProfileChanged() end
+	if NS.AuctionScore and NS.AuctionScore.OnProfileChanged then NS.AuctionScore.OnProfileChanged() end
+	if NS.RefreshSettingsPage then NS.RefreshSettingsPage() end
 end
 
 NS.REWARD_MODES = { "fit", "value", "manual" }
