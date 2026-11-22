@@ -187,22 +187,31 @@ local function BuildFrame()
 	f.Close:SetPoint("TOPRIGHT", f, "TOPRIGHT", 2, 2)
 	f.Close:SetScript("OnClick", function() PrePick.Dismiss() end)
 
-	f.Later = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-	f.Later:SetSize(120, 22)
-	f.Later:SetPoint("BOTTOM", f, "BOTTOM", 0, 10)
-	f.Later:SetText(L["Decide at hand-in"])
-	f.Later:SetScript("OnClick", function() PrePick.Dismiss() end)
-
-	-- Foot, bottom-up: Close button, then the engine's verdict ("no item upgrade,
-	-- most valuable: 4s 69c" / "upgrade: score ..."), then the icon legend, which
-	-- therefore sits directly under the last reward card.
+	-- Foot, bottom-up (Render anchors these; each row takes height only when shown):
 	--
 	--   [ reward cards ]
 	--   coin recommended   check your pick     <- Legend
 	--   no item upgrade, most valuable: ...    <- Reason
-	--   [ Close ]                              <- Later
+	--   preselect an item now to ...           <- Hint (orange, decide quest w/o pick)
+	--                               [ Next > ] <- Next ("Next" while a later quest says decide, else "Close")
+	f.Next = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+	f.Next:SetSize(90, 22)
+	f.Next:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -14, 10)
+	f.Next:SetText(L["Next"])
+	f.Next:SetScript("OnClick", function(self)
+		if self.questID then PrePick.Open(self.questID, true) else PrePick.Dismiss() end
+	end)
+
+	f.Hint = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	f.Hint:SetPoint("BOTTOM", f, "BOTTOM", 0, 10)
+	f.Hint:SetWidth(PrePick.WIDTH - 40)
+	f.Hint:SetJustifyH("CENTER")
+	f.Hint:SetTextColor(1, 0.65, 0.2)
+	f.Hint:SetText(L["Pre-select an item now to automate the quest turn-in."])
+	f.Hint:Hide()
+
 	f.Reason = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	f.Reason:SetPoint("BOTTOM", f.Later, "TOP", 0, 6)
+	f.Reason:SetPoint("BOTTOM", f, "BOTTOM", 0, 10)
 	f.Reason:SetWidth(PrePick.WIDTH - 40)
 	f.Reason:SetJustifyH("CENTER")
 	f.Reason:SetTextColor(1, 0.82, 0)
@@ -505,8 +514,8 @@ function PrePick.ShowEmpty()
 	return true
 end
 
--- The close box and "Decide at hand-in": in preview mode they also untick the
--- unlock setting, so the window locks and goes away without a trip to the settings.
+-- The close box: in preview mode it also unticks the unlock setting, so the
+-- window locks and goes away without a trip to the settings.
 function PrePick.Dismiss()
 	if state.preview and NS.db then
 		NS.db.settings.prePickUnlocked = false
@@ -554,7 +563,6 @@ function PrePick.Render()
 		frame.Reason:SetText(Data.DecisionText(decision))
 	end
 	frame.Notice:SetText(L["Pre-select your reward."])
-	frame.Later:SetText(L["Close"])
 	local picked = PrePick.Get(state.questID)
 	local player = Rules.Player()
 	-- Stat-profile switcher under the notice (SPECS/STAT_PROFILES.md). Hidden by the
@@ -652,10 +660,41 @@ function PrePick.Render()
 	end
 	for i = shown + 1, #rows do rows[i]:Hide() end
 	frame.Legend:SetShown(shown > 0)
-	-- Foot: button (10 + 22) + legend (6 + text) + reason (6 + text) + a little air.
+	-- Foot, bottom-up: the Next / Close button row, optional orange hint, reason,
+	-- legend. The button says Next while a later quest in the list still needs a
+	-- decision, and Close once there is none left.
+	local nextQuest = (not state.preview) and PrePick.NextDecideQuest(pending) or nil
+	frame.Next.questID = nextQuest and nextQuest.questID or nil
+	frame.Next:SetText(nextQuest and L["Next"] or L["Close"])
+	frame.Next:ClearAllPoints()
+	frame.Next:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -14, 10)
+	frame.Next:Show()
+	local foot = 10 + 22 + 4
+	local needsPick = not state.preview and state.questID > 0 and decision ~= nil
+		and not decision.pending and decision.action ~= "auto" and picked == nil
+	frame.Hint:SetShown(needsPick)
+	if needsPick then
+		frame.Hint:ClearAllPoints()
+		frame.Hint:SetPoint("BOTTOM", frame, "BOTTOM", 0, foot)
+		foot = foot + frame.Hint:GetStringHeight() + 6
+	end
+	frame.Reason:ClearAllPoints()
+	frame.Reason:SetPoint("BOTTOM", frame, "BOTTOM", 0, foot)
+	foot = foot + frame.Reason:GetStringHeight()
 	local legendHeight = shown > 0 and (6 + frame.Legend:GetStringHeight()) or 0
-	frame:SetHeight(-y + 32 + legendHeight + 6 + frame.Reason:GetStringHeight() + 8)
+	frame:SetHeight(-y + foot + legendHeight + 6 + 8)
 	frame:Show()
+end
+
+-- The first quest after the shown one (list order) that still needs the player's
+-- decision: not auto, no stored pick, item data loaded. nil when there is none.
+function PrePick.NextDecideQuest(pending)
+	local after = false
+	for _, q in ipairs(pending or {}) do
+		if after and not q.pending and not q.picked and q.action ~= "auto" then return q end
+		if q.questID == state.questID then after = true end
+	end
+	return nil
 end
 
 -- The player clicked a reward: remember it (toggle off when clicked again).

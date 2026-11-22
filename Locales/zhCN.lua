@@ -261,7 +261,8 @@ L["recommend only"] = "仅推荐"
 
 -- Pre-pick window (PrePick.lua)
 L["Reward for %s"] = "%s 的奖励"
-L["Decide at hand-in"] = "交付时再决定"
+L["Next"] = "下一个"
+L["Pre-select an item now to automate the quest turn-in."] = "现在预选一件物品，即可自动交付任务。"
 L["(your pick)"] = "（你的选择）"
 L["(suggested)"] = "（建议）"
 L["Pre-pick cleared for %s."] = "已清除 %s 的预选。"

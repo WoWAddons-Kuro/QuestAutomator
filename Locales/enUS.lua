@@ -256,7 +256,8 @@ L["recommend only"] = "recommend only"
 
 -- Pre-pick window (PrePick.lua)
 L["Reward for %s"] = "Reward for %s"
-L["Decide at hand-in"] = "Decide at hand-in"
+L["Next"] = "Next"
+L["Pre-select an item now to automate the quest turn-in."] = "Pre-select an item now to automate the quest turn-in."
 L["(your pick)"] = "(your pick)"
 L["(suggested)"] = "(suggested)"
 L["Pre-pick cleared for %s."] = "Pre-pick cleared for %s."
