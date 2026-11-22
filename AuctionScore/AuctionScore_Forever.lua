@@ -78,8 +78,10 @@ function provider.Install()
 			AuctionScore.switcher:SetFrameLevel((list:GetFrameLevel() or 0) + 5)
 		end
 		AuctionScore.switcher:ClearAllPoints()
-		-- CENTER on the bottom edge: half the bubble sits over the border, half below.
-		AuctionScore.switcher:SetPoint("CENTER", list, "BOTTOM", 0, 0)
+		-- Centred on the drawn bottom border, which sits about 1.2 bubble-heights below
+		-- the list frame's own bottom edge (owner 2026-11-22, measured on Forever).
+		local drop = math.floor(NS.ProfileSwitch.BUBBLE_HEIGHT * 1.2 + 0.5)
+		AuctionScore.switcher:SetPoint("CENTER", list, "BOTTOM", 0, -drop)
 		AuctionScore.switcherAnchor = "bottom centre of " .. which
 		AuctionScore.switcher:Update()
 	end
