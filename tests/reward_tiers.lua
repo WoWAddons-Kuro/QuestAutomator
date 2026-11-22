@@ -69,3 +69,118 @@ print('PASS best-type and neutral-slot armour never flagged lighter')
 
 assert(Rewards.ReasonText('lighter') == 'lighter than your armour class')
 print('PASS /qam why text for lighter')
+
+-- Tier 5: nothing is an upgrade -> the best CASH item, wearable or not.
+-- "Collecting Memories" on a L14 leather wearer: Tunneler's Boots 4s69c (plate, cannot
+-- wear), Dusty Mining Gloves 2s58c (leather, no stats the class values), Worn Miner's
+-- Waistcord 2s81c (cloth). With no stats anywhere nothing upgrades; the boots must win.
+local function trash(index, subclass, sellPrice)
+	local c = armour(index, subclass, {}, sellPrice)
+	c.equipLoc = ({ 'INVTYPE_FEET', 'INVTYPE_HAND', 'INVTYPE_WAIST' })[index]
+	return c
+end
+choices = { trash(1, A.PLATE, 469), trash(2, A.LEATHER, 258), trash(3, A.CLOTH, 281) }
+d = Rewards.Evaluate(choices, fit, player('ROGUE', 14))
+assert(d.index == 1 and d.reason == 'fallback' and d.tier == 'tier5Action', 'tier 5 must take the most valuable item even when it is unwearable: ' .. tostring(d.index))
+print('PASS tier 5 picks the best cash item regardless of wearability')
+
+-- Tier 5 "ask" leaves the window open with the coin on the cash item; "upgrade" is
+-- meaningless there and behaves as cash.
+d = Rewards.Evaluate(choices, { rewardMode = 'fit', fallbackToValue = true, tier5Action = 'ask' }, player('ROGUE', 14))
+assert(d.reason == 'recommend' and d.tier == 'tier5Action' and d.choice.index == 1 and not d.index)
+d = Rewards.Evaluate(choices, { rewardMode = 'fit', fallbackToValue = true, tier5Action = 'upgrade' }, player('ROGUE', 14))
+assert(d.index == 1 and d.reason == 'fallback')
+print('PASS tier 5 ask / upgrade dispositions')
+
+-- The three verbs on tier 4: upgrade takes the best upgrade, cash takes the most
+-- valuable item in the whole pool (here the unwearable one), ask recommends.
+choices = { armour(1, A.LEATHER, { ARMOR = 6 }, 10), armour(2, A.LEATHER, { ARMOR = 21 }, 20), armour(3, A.MAIL, { ARMOR = 50 }, 900) }
+d = Rewards.Evaluate(choices, { rewardMode = 'fit', fallbackToValue = true, tier4Action = 'upgrade' }, player('SHAMAN', 1))
+assert(d.index == 2 and d.reason == 'fit' and d.tier == 'tier4Action', 'tier 4 upgrade -> best upgrade')
+d = Rewards.Evaluate(choices, { rewardMode = 'fit', fallbackToValue = true, tier4Action = 'cash' }, player('SHAMAN', 1))
+assert(d.index == 3 and d.reason == 'fallback' and d.tier == 'tier4Action', 'tier 4 cash -> most valuable in pool')
+d = Rewards.Evaluate(choices, { rewardMode = 'fit', fallbackToValue = true, tier4Action = 'ask' }, player('SHAMAN', 1))
+assert(d.reason == 'recommend' and d.choice.index == 2 and not d.index, 'tier 4 ask -> recommend')
+print('PASS ask / upgrade / cash verbs on tier 4')
+
+-- Saved values from before the rename still mean what they meant.
+d = Rewards.Evaluate(choices, { rewardMode = 'fit', fallbackToValue = true, tier4Action = 'auto' }, player('SHAMAN', 1))
+assert(d.index == 2 and d.reason == 'fit', 'legacy auto on tier 4 = upgrade')
+d = Rewards.Evaluate(choices, { rewardMode = 'fit', fallbackToValue = true, tier4Action = 'recommend' }, player('SHAMAN', 1))
+assert(d.reason == 'recommend', 'legacy recommend = ask')
+choices = { trash(1, A.PLATE, 469), trash(2, A.LEATHER, 258) }
+d = Rewards.Evaluate(choices, { rewardMode = 'fit', fallbackToValue = true, tier5Action = 'auto' }, player('ROGUE', 14))
+assert(d.index == 1 and d.reason == 'fallback', 'legacy auto on tier 5 = cash')
+print('PASS legacy auto / recommend values map to the new verbs')
+
+-- Druid weapon DPS differs per flavour: Forever form damage IS based on weapon DPS
+-- (default MELEE_DPS 4.0 stays), Classic Era form damage IGNORES it (Era client
+-- overrides it to 0). A plain-DPS mace is an upgrade for the Forever druid and
+-- vendor cash for the Era druid.
+local function mace(index, dps, sellPrice)
+	return { index = index, itemID = 2000 + index, loaded = true, lootType = Rewards.LOOT_ITEM, quality = 1,
+		sellPrice = sellPrice, count = 1, stats = { DAMAGE_PER_SECOND = dps }, usable = true,
+		classID = Rules.CLASS_WEAPON, subclassID = Rules.WEAPON.MACE1H, equipLoc = 'INVTYPE_WEAPON', itemLevel = 20 }
+end
+local gun = { index = 2, itemID = 2002, loaded = true, lootType = Rewards.LOOT_ITEM, quality = 1, sellPrice = 900, count = 1,
+	stats = { DAMAGE_PER_SECOND = 12 }, usable = true, classID = Rules.CLASS_WEAPON, subclassID = Rules.WEAPON.GUN, equipLoc = 'INVTYPE_RANGEDRIGHT', itemLevel = 20 }
+assert(Rules.WEIGHTS.DRUID.MELEE_DPS == 4.0, 'Forever default: druid weapon DPS counts')
+choices = { mace(1, 9.5, 300), gun }
+d = Rewards.Evaluate(choices, fit, player('DRUID', 20))
+assert(d.index == 1 and d.reason == 'fit' and d.tier == 'tier2Action', 'Forever druid: the hammer is a DPS upgrade -> take it')
+print('PASS Forever druid: hammer with better weapon DPS is an upgrade')
+
+-- Apply what Client_ClassicEra.StatWeightOverrides returns.
+local eraNS = { SafeNumber = NS.SafeNumber, SafeString = NS.SafeString, SafeBool = function(v) return v == true end,
+	Call = function() return nil end, WarnOnce = function() end, Client = { FREQUENCY_DEFAULT = 'default', DecodeFrequency = function() return 'default' end }, ClientFlavours = {} }
+assert(loadfile('QuestAutomator/Client/Client_ClassicEra.lua'))('QuestAutomator', eraNS)
+local eraOverrides = eraNS.ClientFlavours.classic_era.StatWeightOverrides()
+assert(eraOverrides.DRUID and eraOverrides.DRUID.MELEE_DPS == 0, 'Era client must zero druid melee DPS')
+local savedDPS, savedSpeed = Rules.WEIGHTS.DRUID.MELEE_DPS, Rules.WEIGHTS.DRUID.MELEE_SPEED
+Rules.ApplyClientWeightOverrides(eraOverrides)
+assert(Rules.DefaultWeight('DRUID', 'MELEE_DPS') == 0 and Rules.DefaultWeight('ROGUE', 'MELEE_DPS') == 4.0, 'override touches only the listed class/stat')
+choices = { mace(1, 9.5, 300), gun }
+d = Rewards.Evaluate(choices, fit, player('DRUID', 20))
+assert(d.index == 2 and d.reason == 'fallback' and d.tier == 'tier5Action', 'Era druid: hammer DPS is worthless -> no upgrade -> best cash item (the gun)')
+assert(choices[1].fit.why == 'nostats')
+Rules.WEIGHTS.DRUID.MELEE_DPS, Rules.WEIGHTS.DRUID.MELEE_SPEED = savedDPS, savedSpeed
+print('PASS Classic Era druid: weapon DPS ignored, hammer is not an upgrade')
+
+-- The hand-in announcement (Rewards.Describe) must state the cash value whenever
+-- the pick was made for cash, and the score + gain whenever it was an upgrade.
+NS.FormatMoney = function(copper) return string.format('%dc', copper) end
+choices = { trash(1, A.PLATE, 469), trash(2, A.LEATHER, 258) }
+d = Rewards.Evaluate(choices, fit, player('ROGUE', 14))
+assert(Rewards.Describe(d) == 'no item upgrade, most valuable: 469c', Rewards.Describe(d))
+choices = { armour(1, A.LEATHER, { ARMOR = 6 }, 10), armour(2, A.LEATHER, { ARMOR = 21 }, 20), armour(3, A.MAIL, { ARMOR = 50 }, 900) }
+d = Rewards.Evaluate(choices, { rewardMode = 'fit', fallbackToValue = true, tier4Action = 'cash' }, player('SHAMAN', 1))
+assert(Rewards.Describe(d) == 'cash over an upgrade (your tier setting), most valuable: 900c', Rewards.Describe(d))
+d = Rewards.Evaluate(choices, { rewardMode = 'fit', fallbackToValue = true, tier4Action = 'upgrade' }, player('SHAMAN', 1))
+local text = Rewards.Describe(d)
+assert(text:find('^upgrade %(best of several upgrades%): score 2%.1, empty slot') and text:find('%+21 Armor'), text)
+print('PASS announce text: cash value on cash picks, score and gain on upgrades')
+
+-- Consumables: Keeper of the Flame offers two potions. Nothing is equipment, so the
+-- offer is AMBIGUOUS (tier 1, same bucket as trinkets): ask by default, coin on the
+-- most valuable as a hint. "upgrade" has no meaning there and acts as cash.
+local function potion(index, sellPrice)
+	return { index = index, itemID = 3000 + index, loaded = true, lootType = Rewards.LOOT_ITEM, quality = 1,
+		sellPrice = sellPrice, count = 1, stats = {}, usable = true, classID = 0, subclassID = 1, equipLoc = '', itemLevel = 15 }
+end
+choices = { potion(1, 30), potion(2, 15) }
+d = Rewards.Evaluate(choices, fit, player('ROGUE', 14))
+assert(d.reason == 'recommend' and d.tier == 'tier1Action' and d.choice.index == 1 and not d.index, 'only consumables -> tier 1 ask, coin on the pricier potion')
+assert(choices[1].fit.why == 'notgear' and choices[2].fit.why == 'notgear')
+assert(Rewards.ReasonText('recommend', d) == 'ambiguous rewards, make a manual selection')
+d = Rewards.Evaluate(choices, { rewardMode = 'fit', fallbackToValue = true, tier1Action = 'cash' }, player('ROGUE', 14))
+assert(d.index == 1 and d.reason == 'fallback' and d.tier == 'tier1Action', 'tier 1 cash -> take the pricier potion')
+d = Rewards.Evaluate(choices, { rewardMode = 'fit', fallbackToValue = true, tier1Action = 'upgrade' }, player('ROGUE', 14))
+assert(d.index == 1 and d.reason == 'fallback', 'tier 1 upgrade on consumables acts as cash')
+print('PASS all-consumable offers are ambiguous (tier 1)')
+
+-- A potion beside real gear does not hijack the pipeline: the gloves are the
+-- single upgrade and are taken; the potion is simply not gear.
+choices = { potion(1, 900), armour(2, A.LEATHER, { ARMOR = 21 }, 20) }
+d = Rewards.Evaluate(choices, fit, player('ROGUE', 14))
+assert(d.index == 2 and d.reason == 'fit' and d.tier == 'tier2Action' and choices[1].fit.why == 'notgear', 'gear beside a potion still goes through the upgrade tiers')
+print('PASS mixed consumable + gear offers use the upgrade pipeline')

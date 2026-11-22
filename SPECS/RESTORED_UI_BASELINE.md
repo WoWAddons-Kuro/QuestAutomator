@@ -45,8 +45,8 @@ The owner subsequently confirmed successful automatic turn-in in the live client
 | pending quest (UI) | Quest currently in log with at least two item reward choices, even if original policy auto-picks |
 | pending item data | Not cached yet; UI retries up to six times, and closed/replaced requests are cancelled |
 | prePicks[questID] | ItemID preference owned by PrePickModel; resolver matches it against the current offer |
-| tier1Action..tier5Action | Saved-only placeholders, no effect |
-| ilvlBand / weaponProficiency / valueSource | Saved-only placeholders, no effect |
+| tier1Action..tier5Action | **Live since 2026-11-20.** Values `ask` / `upgrade` / `cash` (see QuestAutomator_SPEC §6.0); `tier3Action` is saved but unused |
+| ilvlBand / valueSource | Saved-only placeholders, no effect. (`upgradeBand` = the live "upgrade threshold" slider, default 5%; `weaponProficiency` is live) |
 | rewardMode / weapons / trinkets / fallbackToValue / manualQuality | Original, functional reward policy settings |
 | prePickUI | Functional UI-only on-accept display toggle, not a hand-in override |
 | prePickUnlocked / prePickPos | Functional UI preview/movement and account-wide saved position |

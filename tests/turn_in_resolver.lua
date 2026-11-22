@@ -102,7 +102,7 @@ NS.PrePickModel.SetSelectedRewardItemID(363, 1001)
 local baseline = Resolver.Resolve(validContext)
 assert(baseline.action == 'submit' and baseline.rewardChoiceIndex == 1 and baseline.reason == 'prepick')
 assert(Resolver.IsDecisionValid(validContext, baseline))
-validContext.settings.tier1Action = 'auto'
+validContext.settings.tier1Action = 'upgrade'
 validContext.settings.valueSource = 'auction'
 validContext.settings.weaponProficiency = 'usable'
 local unchanged = Resolver.Resolve(validContext)

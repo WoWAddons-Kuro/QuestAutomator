@@ -89,6 +89,15 @@ Client.INTERFACE = {
 	-- QuestLogRewardXP(questID) -> experience a completed log quest gives on hand-in; 0 if unknown
 	"QuestLogRewardXP",
 
+	-- StatWeightOverrides()  flavour-specific corrections to the default class stat
+	-- weights (Rules.WEIGHTS), applied once at load by Rules.ApplyClientWeightOverrides.
+	--   -> { CLASS = { STAT_KEY = weight, ... }, ... }   (empty table = no differences)
+	-- The game rules differ per flavour: on Forever druids benefit from weapon DPS and
+	-- weapon procs in forms (MELEE_DPS matters); on Classic Era druid weapon damage is
+	-- ignored in forms so a hammer is never an upgrade on its DPS. Keep every such
+	-- "the game itself works differently here" fact in the flavour file, not in Rules.
+	"StatWeightOverrides",
+
 	-- DebugReport()  one /qam debug line describing the flavour and its constants
 	"DebugReport",
 }

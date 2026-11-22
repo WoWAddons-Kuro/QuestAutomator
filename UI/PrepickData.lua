@@ -131,6 +131,9 @@ end
 
 function Data.ItemText(choice)
 	if choice.loaded == false then return L["item data not loaded"] end
+	-- Potions, food, bags, recipes: "cannot wear" is nonsense for these. Say what
+	-- it is instead - there is nothing to compare against your gear.
+	if not NS.Rewards.IsEquipment(choice) then return L["not equipment"] end
 	if choice.untrained then return L["needs weapon training"] end
 	if choice.wearable then return L["wearable"] end
 	return L["cannot wear"]

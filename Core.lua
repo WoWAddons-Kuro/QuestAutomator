@@ -454,7 +454,7 @@ function NS.PrintStatus()
 	NS.Print(L["Automation: %s%s"], OnOff(s.enabled), (NS.Auto and NS.Auto.SessionPaused()) and (" (" .. L["paused for this session"] .. ")") or "")
 	NS.Print(L["Accept quests: %s (low-level %s, repeatable %s) | hand in: %s (repeatable %s) | party escorts: %s"],
 		OnOff(s.accept), OnOff(s.acceptTrivial), OnOff(s.acceptRepeatable), OnOff(s.turnIn), OnOff(s.turnInRepeatable), OnOff(s.confirmPartyQuests))
-	NS.Print(L["Reward: %s | weapons: %s | trinkets: %s | nothing fits: %s"], NS.RewardModeName(s.rewardMode),
+	NS.Print(L["Reward: %s | weapons: %s | trinkets: %s | no upgrade: %s"], NS.RewardModeName(s.rewardMode),
 		OnOff(s.weapons), OnOff(s.trinkets), s.fallbackToValue and L["take the most valuable"] or L["leave it to me"])
 	NS.Print(L["Left to me from quality: %s"], s.manualQuality >= 0 and NS.QualityName(s.manualQuality) or L["never"])
 	NS.Print(L["Announcements: %s"], OnOff(s.announce))
@@ -502,7 +502,7 @@ SlashCmdList["QUESTAUTOMATOR"] = function(msg)
 	elseif cmd == "trinkets" or cmd == "trinket" then
 		NS.SetFlag("trinkets", rest, L["Pick trinkets too"])
 	elseif cmd == "fallback" then
-		NS.SetFlag("fallbackToValue", rest, L["Nothing fits: take the most valuable"])
+		NS.SetFlag("fallbackToValue", rest, L["No upgrade: take the most valuable"])
 	elseif cmd == "quality" then
 		local arg = rest:lower()
 		if arg == "off" or arg == "never" or arg == "none" then

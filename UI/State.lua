@@ -6,12 +6,32 @@ NS.UIState = UIState
 
 UIState.DEFAULTS = {
 	prePickUI = true, prePickUnlocked = false,
-	tier1Action = "recommend", tier2Action = "auto", tier3Action = "auto",
-	tier4Action = "recommend", tier5Action = "auto",
-	-- upgradeBand: percent more stat value than the worn item a reward needs to count as an upgrade.
-	ilvlBand = 2, upgradeBand = 10, weaponProficiency = "learnable", valueSource = "vendor",
+	-- Tier dispositions (UIState.TIER_ACTIONS). Three explicit verbs; "auto" was
+	-- ambiguous because it meant "take the upgrade" on tiers 2/4 and "take the cash"
+	-- on tier 5, which is how the two got confused.
+	--   ask     = recommend only: glow the suggested item, window stays open
+	--   upgrade = auto-pick the best stat upgrade over what is worn
+	--   cash    = auto-pick the highest vendor-value reward, wearable or not
+	tier1Action = "ask", tier2Action = "upgrade", tier3Action = "upgrade",
+	tier4Action = "ask", tier5Action = "cash",
+	-- upgradeBand: "upgrade threshold" - percent more stat value than the worn item a
+	-- reward needs before it counts as an upgrade (below it = sidegrade = vendor trash).
+	ilvlBand = 2, upgradeBand = 5, weaponProficiency = "learnable", valueSource = "vendor",
 }
-UIState.TIER_ACTIONS = { "recommend", "auto" }
+UIState.TIER_ACTIONS = { "ask", "upgrade", "cash" }
+UIState.TIER_ACTION_SET = { ask = true, upgrade = true, cash = true }
+-- Saved values from before the rename: "recommend" -> ask; "auto" -> whatever that
+-- tier's auto meant (upgrade on 1/2/3/4, cash on 5).
+UIState.LEGACY_TIER_ACTIONS = {
+	recommend = function() return "ask" end,
+	auto = function(tier) return tier == 5 and "cash" or "upgrade" end,
+}
+function UIState.MigrateTierAction(tier, value)
+	if UIState.TIER_ACTION_SET[value] then return value end
+	local legacy = UIState.LEGACY_TIER_ACTIONS[value]
+	if legacy then return legacy(tier) end
+	return UIState.DEFAULTS["tier" .. tier .. "Action"]
+end
 UIState.WEAPON_PROFICIENCIES = { "learnable", "usable" }
 UIState.VALUE_SOURCES = { "vendor", "auction", "disenchant" }
 
@@ -38,7 +58,7 @@ function UIState.Initialize()
 	end
 	for tier = 1, 5 do
 		local key = "tier" .. tier .. "Action"
-		if settings[key] ~= "auto" and settings[key] ~= "recommend" then settings[key] = UIState.DEFAULTS[key] end
+		settings[key] = UIState.MigrateTierAction(tier, settings[key])
 	end
 	if settings.weaponProficiency ~= "learnable" and settings.weaponProficiency ~= "usable" then settings.weaponProficiency = "learnable" end
 	if settings.valueSource ~= "vendor" and settings.valueSource ~= "auction" and settings.valueSource ~= "disenchant" then settings.valueSource = "vendor" end

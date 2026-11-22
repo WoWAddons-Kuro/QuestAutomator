@@ -196,6 +196,17 @@ function Era.QuestLogRewardXP(questID)
 	return NS.SafeNumber(WithLogSelection(questID, function() return NS.Call("GetQuestLogRewardXP") end)) or 0
 end
 
+-- CLASSIC ERA RULE: a druid's Cat / Bear form damage IGNORES weapon DPS (form attack
+-- is derived from level and attack power; the weapon's own damage range is irrelevant).
+-- So a mace or staff is never an upgrade for an Era druid on its DPS - only on its
+-- stats. Zero the melee DPS weight; everything else keeps the shared default.
+-- (On Forever form damage IS based on weapon DPS, so Forever leaves the 4.0 default.)
+function Era.StatWeightOverrides()
+	return {
+		DRUID = { MELEE_DPS = 0, MELEE_SPEED = 0 },
+	}
+end
+
 function Era.DebugReport()
 	local E = Enum and Enum.QuestFrequency or {}
 	NS.Print("Client: Classic Era; Enum.QuestFrequency Default=%s Daily=%s Weekly=%s | LE_QUEST_FREQUENCY DEFAULT=%s DAILY=%s WEEKLY=%s",

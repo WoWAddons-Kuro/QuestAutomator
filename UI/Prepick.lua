@@ -169,12 +169,8 @@ local function BuildFrame()
 	f.Title:SetWidth(PrePick.WIDTH - 40)
 	f.Title:SetJustifyH("CENTER")
 
-	f.Reason = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	f.Reason:SetPoint("TOP", f.Title, "BOTTOM", 0, -3)
-	f.Reason:SetWidth(PrePick.WIDTH - 40)
-	f.Reason:SetJustifyH("CENTER")
 	f.Notice = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	f.Notice:SetPoint("TOP", f.Reason, "BOTTOM", 0, -6)
+	f.Notice:SetPoint("TOP", f.Title, "BOTTOM", 0, -4)
 	f.Notice:SetWidth(PrePick.WIDTH - 40)
 	f.Notice:SetJustifyH("CENTER")
 	f.Notice:SetTextColor(1, 0.65, 0.2)
@@ -189,9 +185,22 @@ local function BuildFrame()
 	f.Later:SetText(L["Decide at hand-in"])
 	f.Later:SetScript("OnClick", function() PrePick.Dismiss() end)
 
-	-- Legend for the marker icons shown after item names, above the button.
+	-- Foot, bottom-up: Close button, then the engine's verdict ("no item upgrade,
+	-- most valuable: 4s 69c" / "upgrade: score ..."), then the icon legend, which
+	-- therefore sits directly under the last reward card.
+	--
+	--   [ reward cards ]
+	--   coin recommended   check your pick     <- Legend
+	--   no item upgrade, most valuable: ...    <- Reason
+	--   [ Close ]                              <- Later
+	f.Reason = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	f.Reason:SetPoint("BOTTOM", f.Later, "TOP", 0, 6)
+	f.Reason:SetWidth(PrePick.WIDTH - 40)
+	f.Reason:SetJustifyH("CENTER")
+	f.Reason:SetTextColor(1, 0.82, 0)
+
 	f.Legend = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	f.Legend:SetPoint("BOTTOM", f.Later, "TOP", 0, 6)
+	f.Legend:SetPoint("BOTTOM", f.Reason, "TOP", 0, 6)
 	f.Legend:SetWidth(PrePick.WIDTH - 40)
 	f.Legend:SetJustifyH("CENTER")
 	f.Legend:SetTextColor(0.69, 0.69, 0.69)
@@ -522,13 +531,13 @@ function PrePick.Render()
 	else
 		frame.Reason:SetText(Data.DecisionText(decision))
 	end
-	frame.Notice:SetText(L["Pre-picks override reward recommendations, not automation safeguards."])
+	frame.Notice:SetText(L["Pre-select your reward."])
 	frame.Later:SetText(L["Close"])
 	local picked = PrePick.Get(state.questID)
 	local player = Rules.Player()
 	-- Quest list between the reason line and the rows: only with 2+ pending quests.
 	local pending = (not state.preview) and PrePick.PendingQuests() or {}
-	local headerHeight = 10 + frame.Title:GetStringHeight() + 3 + frame.Reason:GetStringHeight() + 6 + frame.Notice:GetStringHeight() + 12
+	local headerHeight = 10 + frame.Title:GetStringHeight() + 4 + frame.Notice:GetStringHeight() + 12
 	frame.List:ClearAllPoints()
 	frame.List:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -headerHeight)
 	frame.List:SetWidth(PrePick.WIDTH - 40)
@@ -615,7 +624,9 @@ function PrePick.Render()
 	end
 	for i = shown + 1, #rows do rows[i]:Hide() end
 	frame.Legend:SetShown(shown > 0)
-	frame:SetHeight(-y + 40)
+	-- Foot: button (10 + 22) + legend (6 + text) + reason (6 + text) + a little air.
+	local legendHeight = shown > 0 and (6 + frame.Legend:GetStringHeight()) or 0
+	frame:SetHeight(-y + 32 + legendHeight + 6 + frame.Reason:GetStringHeight() + 8)
 	frame:Show()
 end
 

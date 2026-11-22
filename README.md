@@ -21,7 +21,7 @@ Hold **any modifier key** (Shift, Ctrl or Alt) while talking to an NPC to handle
 
 - **Quest dialogs:** automatically accept quests and hand in completed ones, including quests with no reward choice.
 - **Reward selection:** choose best fit, highest vendor value, or manual selection. Configure weapon,
-  trinket, and quality restrictions, plus vendor-value fallback when nothing fits.
+  trinket, and quality restrictions, plus vendor-value fallback when nothing is an upgrade.
 - **Pre-pick rewards:** browse quests in your log, compare rewards with equipped items, and save a choice
   for each quest before returning to the NPC.
 - **Minimap overview:** hover to see quests with reward choices and the status of your pre-picks.

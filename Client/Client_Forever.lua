@@ -132,6 +132,14 @@ function Forever.QuestLogRewardXP(questID)
 	return NS.SafeNumber(NS.Call("GetQuestLogRewardXP", questID)) or 0
 end
 
+-- Forever changed druids: weapon DPS and weapon procs apply in Cat/Bear form, so a
+-- hammer with better DPS IS an upgrade for a druid here. The default Rules.WEIGHTS
+-- (DRUID MELEE_DPS 4.0, like the other melee classes) already describe Forever;
+-- nothing to override. Classic Era is where the difference lives.
+function Forever.StatWeightOverrides()
+	return {}
+end
+
 function Forever.DebugReport()
 	local E = Enum and Enum.QuestFrequency or {}
 	NS.Print("Client: Forever; Enum.QuestFrequency Default=%s Daily=%s Weekly=%s ResetByScheduler=%s",

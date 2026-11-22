@@ -154,19 +154,63 @@ Decisions from owner, 2026-11-17. Replaces §"Scoring" of upstream `Rewards.Eval
 *"which reward fits my class best?"* to *"is any reward an upgrade over what I wear, and is the decision safe to
 automate?"*. Users mostly want quests auto-handled; the engine only stops for things a human should decide.
 
+### 6.0 THE RULE (owner, stated from the beginning; everything below is how the code gets there)
+
+1. **One obvious upgrade** for the player → follow the player's setting, **default `upgrade`** (take it).
+2. **Two or more obvious upgrades** → follow the player's setting, **default `ask`** (coin on the best, window stays open).
+3. **Neither** → pick the **best cash item**, follow the player's setting, **default `cash`**.
+
+"Best cash item" = the reward with the **highest vendor value, full stop**. Wearability, armour class and
+stats are **not** considered in step 3: nothing on offer beats what is worn, so every reward is going to the
+vendor and the one worth the most gold is the right pick. (A 2026-11-20 change made step 3 prefer wearable
+items, and it then put the coin on a 2s81c cloth belt over 4s69c boots. Reverted 2026-11-21:
+`Rewards.ByValue(pool)` over the whole pool.)
+
+**The druid hammer-vs-gun episode (Old Ironforge Incursion) was misdiagnosed on 2026-11-20.** The hammer IS a
+druid upgrade on Forever and should have gone through step 1 — it only looked like "nothing fits" because the
+druid's weapon-DPS weight was wrong at the time. The real rule, now encoded per flavour via
+`Client.StatWeightOverrides()` → `Rules.ApplyClientWeightOverrides`:
+
+| Flavour | Druid Cat / Bear form damage | `DRUID.MELEE_DPS` |
+|---|---|---|
+| **Forever** | **based on weapon DPS** (and weapon procs apply) | 4.0 (shared default) — a better-DPS hammer is an upgrade |
+| **Classic Era** | **ignores weapon DPS** (level + attack power only) | 0 (Era client override) — a hammer upgrades only on its stats |
+
+Any other "the game itself works differently on this flavour" fact belongs in the flavour's client file the
+same way — never as an `if flavour` in `Rules.lua` / `Rewards.lua`.
+
+**Tier dispositions are three explicit verbs** (`UIState.TIER_ACTIONS`, saved as `tierNAction`), selectable on
+every tier:
+
+| Value | Meaning |
+|---|---|
+| `ask` | recommend only: glow the engine's suggestion, leave the reward window open |
+| `upgrade` | auto-pick the best stat upgrade over what is worn (on tier 5 there is none → behaves as `cash`) |
+| `cash` | auto-pick the highest vendor-value reward in the **whole** pool, wearable or not |
+
+The earlier two-value enum `auto` / `recommend` was retired 2026-11-21 because `auto` meant "take the upgrade"
+on tiers 1–4 and "take the cash" on tier 5 — the ambiguity that let the two get confused. Saved values migrate
+in `UIState.MigrateTierAction` (`recommend`→`ask`; `auto`→`upgrade`, or `cash` on tier 5) and `Rewards.TierAction`
+accepts the legacy words as a belt-and-braces fallback.
+
 ### 6.1 Tiers — evaluated in order, first match wins
 
 | Tier | Condition (over the set of choices) | Default action | Setting key |
 |---|---|---|---|
-| **Q** | Any choice has quality ≥ `manualQuality` (default Rare) — kept as a global gate | recommend | `manualQuality` (existing) |
-| **1** | Any choice is **hard to value**: trinket; relic/libram/idol/totem; item whose tooltip has a `Use:` / `Chance on hit:` / `Equip:` *proc* line (not a plain stat line); non-equipment | recommend | `tier1Action` |
-| **2** | Exactly one **best-wearable** choice is a **large upgrade**: `rewardIlvl > wornIlvl + 2` | auto | `tier2Action` |
-| **3** | Exactly one best-wearable choice is a **sidegrade**: `wornIlvl - 2 ≤ rewardIlvl ≤ wornIlvl + 2` | auto | `tier3Action` |
-| **4** | **Two or more** best-wearable choices qualify under tier 2 or 3 (competing upgrades) | recommend | `tier4Action` |
-| **5** | Nothing qualifies → **most valuable** | auto | `tier5Action` |
+| **Q** | Any choice has quality ≥ `manualQuality` (default Rare) — kept as a global gate | ask | `manualQuality` (existing) |
+| **1** | **Ambiguous** — a trinket or relic/libram/idol/totem among the upgrades; a weapon or trinket whose "pick" setting is off; or **no equipment at all on offer** (only consumables: potions, food, bags, recipes — implemented 2026-11-21, `Rewards.IsEquipment`). Message: *"ambiguous rewards, make a manual selection"*. The `Use:` / proc-line detection from the first design is **not** implemented. | `ask` | `tier1Action` |
+| **2** | Exactly one **best-wearable** choice is an **upgrade** (= rule step 1) | `upgrade` | `tier2Action` |
+| **3** | *(unused — the original ilvl-sidegrade tier; stat-based upgrades made it redundant. Setting is saved only.)* | `upgrade` | `tier3Action` |
+| **4** | **Two or more** best-wearable choices are upgrades (= rule step 2) | `ask` | `tier4Action` |
+| **5** | Nothing qualifies → **best cash item**: highest vendor value over **all** choices, wearable or not (= rule step 3) | `cash` | `tier5Action` |
 
-Action values: `"recommend"` (glow the engine's pick, leave the window open) · `"auto"` (take it).
-`recommend` on every tier = the old `manual` mode; no separate master setting.
+**Upgrade** (as implemented, replacing the ilvl test of the first design): the reward's class-weighted stat value
+(`Rewards.StatValue`) exceeds the worn item's by at least the **upgrade threshold** — setting `upgradeBand`,
+percent of score, slider 0–50, **default 5%** (owner 2026-11-21; was 10). Any gain counts when the slot is empty
+or the worn item is worth nothing. Below the threshold a reward is a sidegrade and is treated as cash. Items the
+class cannot equip never count.
+
+`ask` on every tier = the old `manual` mode; no separate master setting.
 
 Future (owner, not now): a per-class **stat priority** veto so e.g. Strength cloth is not an upgrade for a Mage.
 Weights (`Rules.WEIGHTS`) survive today only as the **tie-break inside a tier** (which of two tier-2 items to glow,

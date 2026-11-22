@@ -183,7 +183,7 @@ drain()
 assert(NS.loaded and NS.settingsCategory and not NS.Engine)
 assert(NS.Client and NS.Client.flavour == (modern and "forever" or "classic_era"), "wrong client flavour selected")
 for _, name in ipairs(NS.Client.INTERFACE) do assert(type(NS.Client[name]) == "function", "client interface missing " .. name) end
-assert(NS.db.settings.tier2Action == "auto" and type(NS.chardb.prePicks) == "table")
+assert(NS.db.settings.tier2Action == "upgrade" and NS.db.settings.tier5Action == "cash" and NS.db.settings.upgradeBand == 5 and type(NS.chardb.prePicks) == "table")
 assert(SlashCmdList.QUESTAUTOMATOR and not SlashCmdList.SMARTQUESTAUTOMATION)
 assert(NS.RegisterSettings())
 QuestAutomatorOptions:Show(); QuestAutomatorOptions:Update()
@@ -266,7 +266,7 @@ NS.PrePick.Choose(firstChoice)
 assert(NS.PrePick.Get(101) == firstChoice.itemID)
 assert(QuestAutomatorPrePickFrame:IsShown())
 assert(messages[#messages]:find(string.format(NS.L["Pre-pick for %s: %s. Used at hand-in when automation is allowed."], "First quest", NS.Rewards.ChoiceLabel(firstChoice)), 1, true))
-assert(QuestAutomatorPrePickFrame.Notice.text == NS.L["Pre-picks override reward recommendations, not automation safeguards."])
+assert(QuestAutomatorPrePickFrame.Notice.text == NS.L["Pre-select your reward."])
 assert(NS.PrePick.state.decision.reason == 'prepick')
 local switched = false
 for _, f in ipairs(frames) do
@@ -327,9 +327,12 @@ print("PASS supported/placeholder setting callbacks and saved-state reinitializa
 -- Unsupported settings and UI storage cannot alter the original reward policy.
 local choices = NS.Rewards.Gather(2)
 local original = NS.Rewards.Evaluate(choices, NS.db.settings, NS.Rules.Player())
-for key in pairs(NS.UIState.DEFAULTS) do
-	if key:match('^tier') then NS.db.settings[key] = 'auto' end
-end
+-- Tier dispositions are live settings, so leave them at their defaults here; only
+-- the saved-only placeholders below are being proven inert. Setting a tier to the
+-- legacy word "auto" must still be understood (it maps to that tier's old meaning).
+NS.db.settings.tier3Action = 'auto'
+assert(NS.UIState.MigrateTierAction(3, 'auto') == 'upgrade' and NS.UIState.MigrateTierAction(5, 'auto') == 'cash')
+assert(NS.UIState.MigrateTierAction(4, 'recommend') == 'ask' and NS.UIState.MigrateTierAction(2, 'bogus') == 'upgrade')
 NS.db.settings.ilvlBand = 10
 NS.db.settings.weaponProficiency = 'usable'
 NS.db.settings.valueSource = 'auction'

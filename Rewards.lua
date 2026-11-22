@@ -488,6 +488,12 @@ function Rewards.ApplyKinds(items, settings, player)
 end
 
 -- Could the character wear this at all (armour class / weapon skill), stats aside?
+-- Equipment = armour or a weapon (fishing poles excluded). Everything else - potions,
+-- food, bags, recipes, quest items - is a consumable in the reward engine's eyes.
+function Rewards.IsEquipment(c)
+	return c.classID == Rules.CLASS_ARMOR or Rules.IsWeapon(c.classID, c.subclassID)
+end
+
 function Rewards.Wearable(c, player)
 	if not player or c.usable == false then return false end
 	if c.classID == Rules.CLASS_ARMOR then
@@ -501,22 +507,30 @@ end
 -- Decision: { index, choice, reason } when the addon picks, { reason } when the
 -- choice is left to the player, { pending = true } while item data is missing.
 --
--- The pipeline:
---   1. Upgrades: drop what the class cannot equip (FitScore 0), then drop what adds
---      no stat value over the worn item (statGain <= 0). What is left are upgrades.
---   2. The tier settings decide auto vs recommend on THAT set:
---        tier1 "hard to value" - an upgrade is a trinket / relic / weapon or trinket
---              with its "pick" setting off             (default recommend)
---        tier2 exactly one upgrade                     (default auto)
---        tier4 two or more upgrades                    (default recommend; coin on the best)
---   3. No upgrade: tier5 - the most valuable WEARABLE reward (default auto), or
---      gold alone when nothing offered is wearable.
+-- THE RULE (owner, unchanged since the tiers were designed):
+--   1. ONE obvious upgrade for the player            -> tier2, default "upgrade" (take it)
+--   2. TWO or more obvious upgrades                  -> tier4, default "ask"
+--   3. NEITHER: take the best CASH item              -> tier5, default "cash"
+--      "Cash" = highest vendor value, full stop. Wearability, armour class and stats
+--      play NO part in step 3: nothing on offer beats what is worn, so every reward
+--      is vendor trash and the one worth the most gold is the right pick.
+--
+-- How the code gets there:
+--   Step 1 builds the upgrade set: drop what the class cannot equip (FitScore 0),
+--   then drop what adds no stat value over the worn item (statGain below the band).
+--   Step 2 runs the tiers on that set (tier1 "hard to value" - trinket / relic /
+--   guarded weapon - goes to recommend first).
+--   Step 3 is the cash fallback: Rewards.ByValue over the WHOLE pool.
 -- The rare-or-better quality gate (manualQuality) still overrides everything to
 -- recommend. A decision with reason "recommend:<tier>" carries `choice` (the coin)
 -- but no `index`, so the automation leaves the panel open.
 local function TierAction(settings, key, default)
 	local v = settings[key]
-	if v == "auto" or v == "recommend" then return v end
+	if v == "ask" or v == "upgrade" or v == "cash" then return v end
+	-- Pre-rename saved values, in case UIState.Initialize has not run yet (tests, early calls):
+	-- "auto" meant "upgrade" on tiers 1-4 and "cash" on tier 5.
+	if v == "recommend" then return "ask" end
+	if v == "auto" then return key == "tier5Action" and "cash" or "upgrade" end
 	return default
 end
 
@@ -544,6 +558,28 @@ function Rewards.Evaluate(choices, settings, player)
 		return decision
 	end
 	if settings.rewardMode == "value" then return Gate(Rewards.ByValue(items, "value")) end
+
+	-- Step 0: an offer with no equipment at all (potions, food, bags, recipes...)
+	-- is AMBIGUOUS - tier 1, the same bucket as trinkets. The stat scorer has
+	-- nothing to say about a potion and vendor price is no proxy, so the choice is
+	-- the player's: default "ask" (coin on the most valuable as a hint); "cash"
+	-- takes the most valuable; "upgrade" has no meaning here and acts as "cash".
+	-- Mixed offers (a potion beside gloves) go through the upgrade pipeline: the
+	-- potion scores 0 (why = "notgear") and only the cash path can pick it.
+	local anyEquipment = false
+	for _, c in ipairs(pool) do
+		if Rewards.IsEquipment(c) then anyEquipment = true break end
+	end
+	if not anyEquipment then
+		for _, c in ipairs(pool) do c.fit = { score = 0, why = "notgear" } end
+		local cash = Rewards.ByValue(pool, "fallback")
+		if not cash.index then return { reason = "novalue", pool = pool } end
+		cash.pool, cash.tier = pool, "tier1Action"
+		if TierAction(settings, "tier1Action", "ask") == "ask" then
+			return { choice = cash.choice, reason = "recommend", tier = "tier1Action", pool = pool }
+		end
+		return Gate(cash)
+	end
 
 	-- Step 1: upgrades. Score, compare with the worn item, keep what adds value.
 	-- "Adds value" means at least settings.upgradeBand percent more than the worn
@@ -622,31 +658,37 @@ function Rewards.Evaluate(choices, settings, player)
 		end
 		local tierKey, action
 		if hard then
-			tierKey, action = "tier1Action", TierAction(settings, "tier1Action", "recommend")
+			tierKey, action = "tier1Action", TierAction(settings, "tier1Action", "ask")
 		elseif #upgrades == 1 then
-			tierKey, action = "tier2Action", TierAction(settings, "tier2Action", "auto")
+			tierKey, action = "tier2Action", TierAction(settings, "tier2Action", "upgrade")
 		else
-			tierKey, action = "tier4Action", TierAction(settings, "tier4Action", "recommend")
+			tierKey, action = "tier4Action", TierAction(settings, "tier4Action", "ask")
 		end
-		if action == "auto" then
+		if action == "upgrade" then
 			return Gate({ index = best.index, choice = best, reason = "fit", tier = tierKey, pool = pool })
+		end
+		if action == "cash" then
+			-- The player wants gold even here: highest vendor value over every reward.
+			local cash = Rewards.ByValue(pool, "fallback")
+			if cash.index then
+				cash.pool, cash.tier = pool, tierKey
+				return Gate(cash)
+			end
 		end
 		return { choice = best, reason = "recommend", tier = tierKey, upgrades = #upgrades, pool = pool }
 	end
 
-	-- Step 3: no upgrade. Tier 5: the most valuable reward, preferring what the class
-	-- can equip (never a gun for a druid while a hammer is offered); gold alone only
-	-- when nothing offered is wearable at all.
+	-- Step 3: no upgrade. Tier 5: the best CASH item - highest vendor value, full stop.
+	-- Wearability does not matter here: nothing on offer beats what is worn, so every
+	-- reward is going to the vendor and the one worth the most gold is the right pick
+	-- (owner decision 2026-11-21, reverting the "prefer wearable" rule of 5ee825b).
+	-- "upgrade" is meaningless on this tier (there is none) and is treated as "cash".
 	if settings.fallbackToValue ~= false then
-		local wearable = {}
-		for _, c in ipairs(pool) do
-			if Rewards.Wearable(c, player) or (c.fit and c.fit.untrained) then wearable[#wearable + 1] = c end
-		end
-		local decision = Rewards.ByValue(#wearable > 0 and wearable or pool, "fallback")
+		local decision = Rewards.ByValue(pool, "fallback")
 		if decision.index then
 			decision.pool = pool
 			decision.tier = "tier5Action"
-			if TierAction(settings, "tier5Action", "auto") == "recommend" then
+			if TierAction(settings, "tier5Action", "cash") == "ask" then
 				return { choice = decision.choice, reason = "recommend", tier = "tier5Action", pool = pool }
 			end
 			return Gate(decision)
@@ -669,20 +711,38 @@ function Rewards.Describe(decision)
 	if not c then return "" end
 	if decision.reason == "prepick" then return L["your pre-pick"] end
 	if decision.reason == "fit" then
+		-- An upgrade was taken. Say which tier decided it, the stat score and the gain
+		-- over what is worn, then the stats that drove it: e.g.
+		--   "upgrade (one upgrade): score 12.4, +3.1 over what you wear; Leather, +3 Agility, +2 Stamina"
 		local bits = {}
 		if c.fit and c.fit.typeName then bits[#bits + 1] = c.fit.typeName end
 		for i = 1, math.min(3, c.fit and #c.fit.parts or 0) do
 			local p = c.fit.parts[i]
 			bits[#bits + 1] = FormatAmount(p.amount) .. " " .. Rules.StatName(p.key)
 		end
-		if c.statGain and c.worn and not c.worn.empty then
-			bits[#bits + 1] = format(L["%s over what you wear"], FormatAmount(c.statGain))
-		end
 		if c.fit and c.fit.untrained then bits[#bits + 1] = L["needs weapon training"] end
-		if #bits == 0 then bits[1] = L["usable by your class"] end
-		return format(L["best fit: %s"], table.concat(bits, ", "))
+		local why = decision.tier == "tier4Action" and L["best of several upgrades"]
+			or decision.tier == "tier1Action" and L["hard to value, taken as upgrade"]
+			or L["one upgrade"]
+		local score = format("%.1f", c.statValue or 0)
+		local gain
+		if c.statGain and c.worn and not c.worn.empty then
+			gain = format(L["%s over what you wear"], FormatAmount(c.statGain))
+		else
+			gain = L["empty slot"]
+		end
+		local head = format(L["upgrade (%s): score %s, %s"], why, score, gain)
+		if #bits == 0 then return head end
+		return head .. "; " .. table.concat(bits, ", ")
 	elseif decision.reason == "fallback" then
-		return format(L["nothing fits, most valuable: %s"], NS.FormatMoney(c.value or Value(c)))
+		-- Not "nothing fits": things may fit perfectly well, they just do not beat
+		-- what is worn. The honest line is "no upgrade, so the most valuable one".
+		-- A cash pick made on tiers 1/2/4 (the player set that tier to "take the
+		-- cash") says so, since an upgrade WAS on offer and was skipped for gold.
+		if decision.tier and decision.tier ~= "tier5Action" then
+			return format(L["cash over an upgrade (your tier setting), most valuable: %s"], NS.FormatMoney(c.value or Value(c)))
+		end
+		return format(L["no item upgrade, most valuable: %s"], NS.FormatMoney(c.value or Value(c)))
 	end
 	return format(L["most valuable: %s"], NS.FormatMoney(c.value or Value(c)))
 end
@@ -701,9 +761,9 @@ function Rewards.ReasonText(reason, decision)
 	if reason == "lighter" then return L["lighter than your armour class"] end
 	if reason == "recommend" then
 		local tier = decision and decision.tier
-		if tier == "tier1Action" then return L["a reward is hard to value; the suggested one glows"] end
+		if tier == "tier1Action" then return L["ambiguous rewards, make a manual selection"] end
 		if tier == "tier4Action" then return format(L["%d rewards are upgrades; the suggested one glows"], decision.upgrades or 2) end
-		if tier == "tier5Action" then return L["nothing is an upgrade; the most valuable one glows"] end
+		if tier == "tier5Action" then return L["nothing is an upgrade; the best cash item glows"] end
 		return L["left to you; the suggested one glows"]
 	end
 	if reason == "novalue" then return L["the rewards have no vendor value"] end

@@ -123,6 +123,30 @@ do
 	end
 end
 
+-- The table above describes WoW Forever (the primary target). Where the GAME ITSELF
+-- works differently on another flavour, the flavour's client file says so through
+-- Client.StatWeightOverrides() and it is folded in here, once, at load - so
+-- DefaultWeight, the stat-weight grid's grey defaults and Rules.Weights all agree.
+-- The known case: druid Cat/Bear damage is based on weapon DPS on Forever (the 4.0
+-- above is right) but IGNORES weapon DPS on Classic Era (Era zeroes it).
+function Rules.ApplyClientWeightOverrides(overrides)
+	if type(overrides) ~= "table" then return end
+	for class, row in pairs(overrides) do
+		local profile = Rules.WEIGHTS[class]
+		if profile and type(row) == "table" then
+			for key, weight in pairs(row) do
+				if type(weight) == "number" then profile[key] = weight end
+			end
+		end
+	end
+end
+do
+	local Client = NS.Client
+	if Client and type(Client.StatWeightOverrides) == "function" then
+		Rules.ApplyClientWeightOverrides(Client.StatWeightOverrides())
+	end
+end
+
 -- The weight of a weapon pseudo-stat ("DPS" or "SPEED") for this player, by the
 -- weapon's kind. 0 for a non-weapon.
 function Rules.WeaponWeight(player, subclass, which)

@@ -292,26 +292,32 @@ local function Build()
 		L["Best fit compares the armour class you wear at your level and the stats your class wants. Most valuable takes the reward with the highest vendor price."], { labelWidth = 160 }), 20)
 	r:Add(Check(r, "weapons", L["Pick weapons too"]), 26)
 	r:Add(Check(r, "trinkets", L["Pick trinkets too"]), 26)
-	r:Add(Check(r, "fallbackToValue", L["Nothing fits: take the most valuable"]), 26)
+	r:Add(Check(r, "fallbackToValue", L["No upgrade: take the most valuable"]), 26)
 	local qualityNames = {}
 	for _, v in ipairs(NS.QUALITY_CHOICES) do qualityNames[v] = NS.QualityName(v) end
 	r:Add(RadioRow(r, "manualQuality", L["Leave the choice to me from quality"], NS.QUALITY_CHOICES, qualityNames, L["When any reward is of this quality or better, the reward window stays open for you to choose."], { wrap = true }), 40, -10)
 	r:Finish()
 
 	local ui = NS.UIState
-	local shortNames = { auto = L["auto"], recommend = L["recommend"] }
+	-- One of three explicit verbs per tier; "auto" was dropped because it meant
+	-- "take the upgrade" on some tiers and "take the cash" on others.
+	local shortNames = { ask = L["ask me"], upgrade = L["take the upgrade"], cash = L["take the cash"] }
 	local t = Section(L["Reward tiers (first match wins)"])
-	t:Add(Note(t), 28).text:SetText(L["Rewards the class cannot equip and rewards no better than what you wear are dropped first; the tiers decide what happens to the rest."])
+	t:Add(Note(t), 28).text:SetText(L["One upgrade: take it. Two or more upgrades: ask. No upgrade: take the best cash item. Each step's default can be changed below. Ask me = glow the suggestion and leave the window open. Take the upgrade = the biggest stat gain. Take the cash = the highest vendor price, wearable or not."])
 	local tierRows = {
-		{ "1", L["Hard to value (trinket, relic, or a weapon or trinket you have not allowed)"], L["When any reward is a trinket, a relic, has a Use or chance-on-hit effect, or is not equipment at all. Recommend is the safe choice: the addon cannot weigh these."] },
+		{ "1", L["Ambiguous rewards (trinket, relic, consumables, or a weapon or trinket you have not allowed)"], L["When a reward is a trinket or relic, when only consumables such as potions and food are offered, or when a weapon or trinket you have not allowed is on the table. The addon cannot weigh these, so asking you is the safe choice."] },
 		{ "2", L["One reward is a clear upgrade"], L["Exactly one reward adds more stat value than the upgrade margin over what you wear in that slot."] },
 		{ "4", L["Two or more rewards are upgrades"], L["Several rewards would improve your gear. Recommend lets you weigh them; the coin marks the one with the biggest gain."] },
-		{ "5", L["Nothing is an upgrade: most valuable wearable"], L["No reward beats what you wear: take the most valuable one you can equip (or the most valuable at all when nothing is wearable)."] },
+		{ "5", L["Nothing is an upgrade: best cash item"], L["No reward beats what you wear, so every reward is vendor trash. Take the one with the highest vendor price - whether or not your class could wear it. (There is no upgrade to take here, so that choice acts as take the cash.)"] },
 	}
 	for i, row in ipairs(tierRows) do
 		t:Add(RadioRow(t, "tier" .. row[1] .. "Action", i .. ". " .. row[2], ui.TIER_ACTIONS, shortNames, row[3], { wrap = true }), 52, -8)
 	end
-	t:Add(Slider(t, "QuestAutomatorOptionsBand", "upgradeBand", 0, 50, function(v) return L["Upgrade margin (percent)"] .. ": " .. v .. "%" end), 58, -10)
+	-- Upgrade threshold: how many percent more stat score than the worn item a reward
+	-- needs before it counts as an upgrade at all. Below it = sidegrade = cash.
+	t:Add(Slider(t, "QuestAutomatorOptionsBand", "upgradeBand", 0, 50, function(v)
+		return L["Upgrade threshold (percent of score)"] .. ": " .. v .. "%  -  " .. L["a reward must score at least this much more than what you wear to count as an upgrade"]
+	end), 58, -10)
 	t:Finish()
 
 	-- Section: What counts as wearable / valuable
@@ -334,7 +340,7 @@ local function Build()
 
 	-- Section: Pre-pick and feedback
 	local p = Section(L["Pre-pick and feedback"])
-	p:Add(Note(p), 28).text:SetText(L["Pre-picks override reward recommendations, not automation safeguards."])
+	p:Add(Note(p), 28).text:SetText(L["Pre-select your reward."])
 	p:Add(Check(p, "prePickUI", L["Ask me when I accept a quest"], L["Show reward choices on accept. A saved selection is used at hand-in when automation is allowed; turning off this display does not clear saved picks."]), 26)
 	p:Add(Check(p, "prePickUnlocked", L["Unlock and show the pick window (drag it, then untick)"], L["Shows the pick window with sample rewards so you can drag it where you want it. The position is remembered; untick to lock it again."],
 		function(value) if NS.PrePick and NS.PrePick.SetUnlocked then NS.PrePick.SetUnlocked(value) end end), 26, -2, 20)

@@ -165,7 +165,7 @@ local function ShowTooltip(owner)
 			GameTooltip:AddDoubleLine(quest.title or ("#" .. quest.questID), status, 1, 1, 1, 1, 0.82, 0)
 		end
 	end
-	GameTooltip:AddLine(L["Pre-picks override reward recommendations, not automation safeguards."], 1, 0.65, 0.2, true)
+	GameTooltip:AddLine(L["Pre-select your reward."], 1, 0.65, 0.2, true)
 	GameTooltip:AddLine(L["Left-click: toggle the pick window. Right-click: settings. Drag to move."], 0.8, 0.8, 0.8)
 	GameTooltip:Show()
 end
