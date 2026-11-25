@@ -46,6 +46,30 @@ function Client.DecodeFrequency(map, value)
 end
 
 --------------------------------------------------------------------------------
+-- Shared helper for the flavour files: normalise a GetItemStats-shaped table
+-- ({ ITEM_MOD_STRENGTH_SHORT = 5, ITEM_MOD_DAMAGE_PER_SECOND_SHORT = 2.38,
+-- RESISTANCE0_NAME = 45 }) into { STRENGTH = 5, DAMAGE_PER_SECOND = 2.38, ARMOR = 45 }.
+-- nil when nothing usable is in it (uncached item -> empty table).
+--------------------------------------------------------------------------------
+function Client.NormalizeItemStats(raw)
+	if type(raw) ~= "table" then return nil end
+	local stats, any = {}, false
+	for k, v in pairs(raw) do
+		k, v = NS.SafeString(k), NS.SafeNumber(v)
+		if k and v then
+			local key = k:match("^ITEM_MOD_(.+)_SHORT$") or k:match("^ITEM_MOD_(.+)$")
+			if k == "RESISTANCE0_NAME" then key = "ARMOR" end
+			if key then
+				stats[key] = (stats[key] or 0) + v
+				any = true
+			end
+		end
+	end
+	if any then return stats end
+	return nil
+end
+
+--------------------------------------------------------------------------------
 -- The interface. Every flavour file must implement each of these.
 --------------------------------------------------------------------------------
 Client.INTERFACE = {
@@ -97,6 +121,15 @@ Client.INTERFACE = {
 	-- ignored in forms so a hammer is never an upgrade on its DPS. Keep every such
 	-- "the game itself works differently here" fact in the flavour file, not in Rules.
 	"StatWeightOverrides",
+
+	-- ItemStats(link)  the stats of an item by hyperlink / "item:ID", keyed by the
+	-- middle part of the ITEM_MOD_<KEY>[_SHORT] names plus the pseudo-stats ARMOR and
+	-- DAMAGE_PER_SECOND. nil when the item is not cached or has no stats. The API
+	-- surface differs completely: Forever has C_Item.GetItemStats + C_TooltipInfo;
+	-- Classic Era has NEITHER (verified in-game 1.15.9: C_TooltipInfo is a nil
+	-- global) - only the legacy GetItemStats(link) global, which does report DPS and
+	-- armour. Rewards.lua never touches those APIs directly.
+	"ItemStats",
 
 	-- DebugReport()  one /qam debug line describing the flavour and its constants
 	"DebugReport",

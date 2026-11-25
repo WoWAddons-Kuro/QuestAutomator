@@ -140,6 +140,21 @@ function Forever.StatWeightOverrides()
 	return {}
 end
 
+-- Forever: C_Item.GetItemStats keys by ITEM_MOD_*_SHORT but never reports the
+-- tooltip-only pseudo-stats (weapon DPS, armour value); those are parsed from the
+-- C_TooltipInfo.GetHyperlink lines (Rewards.StatsFromTooltipData). When the API
+-- has nothing (uncached item) the tooltip parse alone is the answer.
+function Forever.ItemStats(link)
+	if not link then return nil end
+	local stats = Client.NormalizeItemStats(NS.Call("C_Item.GetItemStats", link))
+	local fromTooltip = NS.Rewards.StatsFromTooltipData(NS.Call("C_TooltipInfo.GetHyperlink", link))
+	if not stats then return fromTooltip end
+	for _, key in ipairs(NS.Rules.EXTRA_KEYS) do
+		if stats[key] == nil and fromTooltip and fromTooltip[key] then stats[key] = fromTooltip[key] end
+	end
+	return stats
+end
+
 function Forever.DebugReport()
 	local E = Enum and Enum.QuestFrequency or {}
 	NS.Print("Client: Forever; Enum.QuestFrequency Default=%s Daily=%s Weekly=%s ResetByScheduler=%s",

@@ -58,21 +58,11 @@ end
 
 function Data.ItemStats(link)
 	if not link then return nil end
-	local stats = Rewards.StatsFromAPI(link)
-	if stats then return stats end
-	if type(GetItemStats) == "function" then
-		local raw = NS.Call("GetItemStats", link)
-		if type(raw) == "table" then
-			local normalized = {}
-			for key, value in pairs(raw) do
-				local stat = key:match("^ITEM_MOD_(.+)_SHORT$") or key:match("^ITEM_MOD_(.+)$")
-				if key == "RESISTANCE0_NAME" then stat = "ARMOR" end
-				if stat and type(value) == "number" then normalized[stat] = value end
-			end
-			if next(normalized) then return normalized end
-		end
-	end
-	return Rewards.StatsFromTooltipData(NS.Call("C_TooltipInfo.GetHyperlink", link))
+	-- Same source the engine scores with (Client.ItemStats via Rewards.WornItemStats),
+	-- so the worn column and the reward column can never disagree on how stats are read.
+	-- (This used to carry its own legacy-GetItemStats fallback, which is why on Era the
+	-- worn deltas showed while every reward read 0.)
+	return Rewards.WornItemStats(link)
 end
 
 -- The worn item in the reward's slot, as the engine sees it (Rewards.WornItem):

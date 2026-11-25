@@ -193,26 +193,11 @@ end
 --------------------------------------------------------------------------------
 -- Stats of one reward.
 --------------------------------------------------------------------------------
--- C_Item.GetItemStats keys its table by the ITEM_MOD_*_SHORT global-string
--- names (retail behaviour; unverified on Forever, hence the tooltip fallback).
+-- Per-flavour (Client.ItemStats): Forever C_Item.GetItemStats + tooltip pseudo-stats,
+-- Classic Era legacy GetItemStats(link). Kept as a named entry point for callers/tests.
 function Rewards.StatsFromAPI(link)
 	if not link then return nil end
-	local t = NS.Call("C_Item.GetItemStats", link)
-	if type(t) ~= "table" then return nil end
-	local stats, any = {}, false
-	for k, v in pairs(t) do
-		k, v = NS.SafeString(k), NS.SafeNumber(v)
-		if k and v then
-			local key = k:match("^ITEM_MOD_(.+)_SHORT$") or k:match("^ITEM_MOD_(.+)$")
-			if k == "RESISTANCE0_NAME" then key = "ARMOR" end
-			if key then
-				stats[key] = (stats[key] or 0) + v
-				any = true
-			end
-		end
-	end
-	if any then return stats end
-	return nil
+	return NS.Client.ItemStats(link)
 end
 
 function Rewards.StatsFromTooltip(index, kind)
@@ -273,20 +258,15 @@ function Rewards.Gather(numChoices, source)
 				else
 					c.loaded = false
 				end
-				local tooltip = source.Tooltip(i)
-				local stats = Rewards.StatsFromAPI(c.link)
-				c.statsSource = stats and "api" or nil
+				-- The flavour decides how stats are read (Client.ItemStats): Forever has
+				-- C_Item.GetItemStats + C_TooltipInfo, Era only the legacy GetItemStats
+				-- global. The source's own Tooltip(i) (quest-item tooltip data) is the
+				-- fallback for an item the hyperlink route could not answer.
+				local stats = NS.Client.ItemStats(c.link)
+				c.statsSource = stats and "client" or nil
 				if not stats then
-					stats = Rewards.StatsFromTooltipData(tooltip)
+					stats = Rewards.StatsFromTooltipData(source.Tooltip(i))
 					c.statsSource = stats and "tooltip" or "none"
-				else
-					-- GetItemStats never reports the tooltip-only pseudo-stats (weapon DPS,
-					-- armour value) - they are not ITEM_MOD_* entries. Read those from the
-					-- tooltip even when the API answered, else every weapon scores 0 DPS.
-					local fromTooltip = Rewards.StatsFromTooltipData(tooltip) or {}
-					for _, key in ipairs(Rules.EXTRA_KEYS) do
-						if stats[key] == nil and fromTooltip[key] then stats[key] = fromTooltip[key] end
-					end
 				end
 				c.stats = stats or {}
 			else
@@ -392,13 +372,7 @@ Rewards.SLOTS = {
 -- Stats of a worn item: C_Item.GetItemStats, else the tooltip.
 function Rewards.WornItemStats(link)
 	if not link then return {} end
-	local stats = Rewards.StatsFromAPI(link)
-	local fromTooltip = Rewards.StatsFromTooltipData(NS.Call("C_TooltipInfo.GetHyperlink", link)) or {}
-	if not stats then return fromTooltip end
-	for _, key in ipairs(Rules.EXTRA_KEYS) do
-		if stats[key] == nil and fromTooltip[key] then stats[key] = fromTooltip[key] end
-	end
-	return stats
+	return NS.Client.ItemStats(link) or {}
 end
 
 -- The item worn where `equipLoc` goes: { link, itemLevel, slotID, value, stats, empty }.

@@ -207,6 +207,17 @@ function Era.StatWeightOverrides()
 	}
 end
 
+-- CLASSIC ERA: C_Item.GetItemStats does not exist and C_TooltipInfo is a nil global
+-- (verified in-game 1.15.9), so there is no tooltip data to parse - every stat,
+-- including the weapon DPS and armour pseudo-stats, comes from the legacy
+-- GetItemStats(link) global: { ITEM_MOD_*_SHORT = n, RESISTANCE0_NAME = armour }.
+-- Observed: GetItemStats(worn bow) -> { ITEM_MOD_DAMAGE_PER_SECOND_SHORT = 2.38 }.
+-- An uncached item returns an empty table -> nil here (caller treats as not loaded).
+function Era.ItemStats(link)
+	if not link then return nil end
+	return Client.NormalizeItemStats(NS.Call("GetItemStats", link))
+end
+
 function Era.DebugReport()
 	local E = Enum and Enum.QuestFrequency or {}
 	NS.Print("Client: Classic Era; Enum.QuestFrequency Default=%s Daily=%s Weekly=%s | LE_QUEST_FREQUENCY DEFAULT=%s DAILY=%s WEEKLY=%s",

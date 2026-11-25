@@ -146,6 +146,28 @@ assert(choices[1].fit.why == 'nostats')
 Rules.WEIGHTS.DRUID.MELEE_DPS, Rules.WEIGHTS.DRUID.MELEE_SPEED = savedDPS, savedSpeed
 print('PASS Classic Era druid: weapon DPS ignored, hammer is not an upgrade')
 
+-- Classic Era item stats: C_Item.GetItemStats and C_TooltipInfo do not exist there
+-- (in-game 1.15.9: "attempt to index global 'C_TooltipInfo' (a nil value)"); the
+-- legacy GetItemStats(link) global is the only source and DOES report the weapon DPS
+-- and armour pseudo-stats. Regression: every Era reward scored 0 DPS / 0 armour.
+local eraClientNS = { SafeNumber = NS.SafeNumber, SafeString = NS.SafeString, SafeBool = function(v) return v == true end,
+	WarnOnce = function() end, ClientFlavours = {},
+	Call = function(path, link)
+		if path == 'GetItemStats' then
+			if link == 'item:2092' then return {} end -- uncached item: empty table
+			return { ITEM_MOD_DAMAGE_PER_SECOND_SHORT = 2.3809523582458, ITEM_MOD_STAMINA_SHORT = 1, RESISTANCE0_NAME = 45 }
+		end
+		error('Era client reached a non-Era API: ' .. tostring(path))
+	end }
+assert(loadfile('QuestAutomator/Client/Client.lua'))('QuestAutomator', eraClientNS)
+assert(loadfile('QuestAutomator/Client/Client_ClassicEra.lua'))('QuestAutomator', eraClientNS)
+local eraItemStats = eraClientNS.ClientFlavours.classic_era.ItemStats
+local bow = eraItemStats('item:2504')
+assert(bow and math.abs(bow.DAMAGE_PER_SECOND - 2.38) < 0.01 and bow.STAMINA == 1 and bow.ARMOR == 45, 'Era ItemStats must normalise legacy GetItemStats incl. DPS and armour')
+assert(eraItemStats('item:2092') == nil, 'uncached item (empty table) -> nil, not {}')
+assert(eraItemStats(nil) == nil)
+print('PASS Classic Era ItemStats reads legacy GetItemStats (DPS, armour, stats)')
+
 -- The hand-in announcement (Rewards.Describe) must state the cash value whenever
 -- the pick was made for cash, and the score + gain whenever it was an upgrade.
 NS.FormatMoney = function(copper) return string.format('%dc', copper) end
