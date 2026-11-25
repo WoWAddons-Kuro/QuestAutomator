@@ -15,6 +15,15 @@ NS.Rules = Rules
 -- Enum.ItemArmorSubclass / Enum.ItemWeaponSubclass values from
 -- ItemConstantsDocumentation.lua (build 69893).
 Rules.ARMOR = { GENERIC = 0, CLOTH = 1, LEATHER = 2, MAIL = 3, PLATE = 4, COSMETIC = 5, SHIELD = 6, LIBRAM = 7, IDOL = 8, TOTEM = 9, SIGIL = 10, RELIC = 11 }
+-- Armour material badge: the crafting reagent players already read as "this armour
+-- type" (bolt of linen, leather scrap, chain, metal bar). Drawn on the item icon's
+-- lower-right corner in the pre-pick window. Only the four real armour classes.
+Rules.ARMOR_BADGE_TEXTURES = {
+	[Rules.ARMOR.CLOTH]   = "Interface\\Icons\\INV_Fabric_Linen_02",
+	[Rules.ARMOR.LEATHER] = "Interface\\Icons\\INV_Misc_LeatherScrap_03",
+	[Rules.ARMOR.MAIL]    = "Interface\\Icons\\INV_Misc_Chain_01",
+	[Rules.ARMOR.PLATE]   = "Interface\\Icons\\INV_Ingot_01",
+}
 Rules.WEAPON = { AXE1H = 0, AXE2H = 1, BOW = 2, GUN = 3, MACE1H = 4, MACE2H = 5, POLEARM = 6, SWORD1H = 7, SWORD2H = 8,
 	WARGLAIVE = 9, STAFF = 10, BEARCLAW = 11, CATCLAW = 12, FIST = 13, GENERIC = 14, DAGGER = 15, THROWN = 16, CROSSBOW = 18, WAND = 19, FISHINGPOLE = 20 }
 Rules.CLASS_ARMOR = 4  -- Enum.ItemClass.Armor

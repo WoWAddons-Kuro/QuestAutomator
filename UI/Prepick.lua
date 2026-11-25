@@ -28,6 +28,7 @@ PrePick.TEXTURE_PICKED = "Interface\\RaidFrame\\ReadyCheck-Ready"
 PrePick.ICON_RECOMMENDED = "|T" .. PrePick.TEXTURE_RECOMMENDED .. ":0|t"
 PrePick.ICON_PICKED = "|T" .. PrePick.TEXTURE_PICKED .. ":0|t"
 PrePick.BADGE_SIZE = 16
+PrePick.MATERIAL_SIZE = 14     -- armour-material reagent badge, lower-right of the icon
 
 local frame, rows, questLines = nil, {}, {}
 local state = { questID = nil, choices = nil, decision = nil, attempt = 0 }
@@ -287,6 +288,19 @@ local function BuildRow(index)
 	row.Picked:SetPoint("TOPRIGHT", row.Icon, "TOPRIGHT", 3, 3)
 	row.Picked:SetTexture(PrePick.TEXTURE_PICKED)
 	row.Picked:Hide()
+	-- Armour material (reagent icon) lower-right, on a dark square so it stays
+	-- readable over a busy item icon. Texture set per row in Render.
+	row.MaterialBack = row:CreateTexture(nil, "OVERLAY", nil, 1)
+	row.MaterialBack:SetSize(PrePick.MATERIAL_SIZE + 2, PrePick.MATERIAL_SIZE + 2)
+	row.MaterialBack:SetPoint("BOTTOMRIGHT", row.Icon, "BOTTOMRIGHT", 1, -1)
+	row.MaterialBack:SetColorTexture(0, 0, 0, 0.85)
+	row.MaterialBack:Hide()
+	row.Material = row:CreateTexture(nil, "OVERLAY", nil, 2)
+	row.Material:SetSize(PrePick.MATERIAL_SIZE, PrePick.MATERIAL_SIZE)
+	row.Material:SetPoint("CENTER", row.MaterialBack, "CENTER", 0, 0)
+	row.Material:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+	row.Material:Hide()
+
 
 	-- Suggested / picked marker: a yellow glow border around the whole card.
 	row.Border = CreateFrame("Frame", nil, row, BackdropTemplateMixin and "BackdropTemplate" or nil)
@@ -617,6 +631,19 @@ function PrePick.Render()
 			row.Name:SetText(hex .. (c.name or "?") .. "|r")
 			row.Recommended:SetShown(isSuggested and true or false)
 			row.Picked:SetShown(isPicked)
+			-- Armour material badge (lower-right of the icon): cloth / leather / mail /
+			-- plate only; dimmed when wearable but lighter than the class's best type.
+			local material = c.classID == Rules.CLASS_ARMOR and Rules.ARMOR_BADGE_TEXTURES[c.subclassID] or nil
+			if material then
+				row.Material:SetTexture(material)
+				local dim = c.fit and c.fit.lighter and 0.45 or 1
+				row.Material:SetVertexColor(dim, dim, dim)
+				row.Material:Show()
+				row.MaterialBack:Show()
+			else
+				row.Material:Hide()
+				row.MaterialBack:Hide()
+			end
 			row.Value:SetText(c.loaded == false and "" or NS.FormatMoney((c.sellPrice or 0) * (c.count or 1)))
 			local wornLevel = c.worn and c.worn.itemLevel or nil
 			row.Level:SetText(string.format("|cffb0b0b0%s|r %s%s", L["ilvl"], FormatValue(c.itemLevel or 0), FormatDelta(wornLevel and ((c.itemLevel or 0) - wornLevel) or nil)))
