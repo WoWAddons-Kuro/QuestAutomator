@@ -28,7 +28,7 @@ PrePick.TEXTURE_PICKED = "Interface\\RaidFrame\\ReadyCheck-Ready"
 PrePick.ICON_RECOMMENDED = "|T" .. PrePick.TEXTURE_RECOMMENDED .. ":0|t"
 PrePick.ICON_PICKED = "|T" .. PrePick.TEXTURE_PICKED .. ":0|t"
 PrePick.BADGE_SIZE = 16
-PrePick.MATERIAL_SIZE = 14     -- armour-material reagent badge, lower-right of the icon
+PrePick.MATERIAL_SIZE = 14     -- armour-material reagent icon, inline after the item name
 
 local frame, rows, questLines = nil, {}, {}
 local state = { questID = nil, choices = nil, decision = nil, attempt = 0 }
@@ -288,18 +288,6 @@ local function BuildRow(index)
 	row.Picked:SetPoint("TOPRIGHT", row.Icon, "TOPRIGHT", 3, 3)
 	row.Picked:SetTexture(PrePick.TEXTURE_PICKED)
 	row.Picked:Hide()
-	-- Armour material (reagent icon) lower-right, on a dark square so it stays
-	-- readable over a busy item icon. Texture set per row in Render.
-	row.MaterialBack = row:CreateTexture(nil, "OVERLAY", nil, 1)
-	row.MaterialBack:SetSize(PrePick.MATERIAL_SIZE + 2, PrePick.MATERIAL_SIZE + 2)
-	row.MaterialBack:SetPoint("BOTTOMRIGHT", row.Icon, "BOTTOMRIGHT", 1, -1)
-	row.MaterialBack:SetColorTexture(0, 0, 0, 0.85)
-	row.MaterialBack:Hide()
-	row.Material = row:CreateTexture(nil, "OVERLAY", nil, 2)
-	row.Material:SetSize(PrePick.MATERIAL_SIZE, PrePick.MATERIAL_SIZE)
-	row.Material:SetPoint("CENTER", row.MaterialBack, "CENTER", 0, 0)
-	row.Material:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-	row.Material:Hide()
 
 
 	-- Suggested / picked marker: a yellow glow border around the whole card.
@@ -319,21 +307,31 @@ local function BuildRow(index)
 	row.Name:SetHeight(14)
 	row.Name:SetJustifyH("LEFT")
 	row.Name:SetWordWrap(false)
-	-- Name line: name (left) | vendor value | ilvl (right), the latter two in the
-	-- small font, each a fixed sideW wide and packed against the right edge so the
-	-- name gets everything left over and the columns line up on every row.
+	-- Name line: name (left) | vendor value | ilvl | material icon (right edge). The
+	-- value and ilvl are small font, each a fixed sideW wide and packed against the
+	-- material slot so the name gets everything left over and the columns line up on
+	-- every row. The material slot is always reserved (even when no icon shows) so
+	-- ilvl never jumps between rows.
 	local nameLeft = PrePick.ICON_SIZE + 8
-	local lineW = PrePick.WIDTH - 40 - nameLeft - 4
+	local materialSlot = PrePick.MATERIAL_SIZE + 4
+	local lineW = PrePick.WIDTH - 40 - nameLeft - 4 - materialSlot
 	local sideW = math.floor(lineW * 0.20)
 	row.Name:SetWidth(lineW - 2 * sideW - 4)
+	-- Armour material (reagent icon) at the far right of the top line: white = your
+	-- best type, dimmed = wearable but lighter, red = cannot wear. Texture per row in Render.
+	row.Material = row:CreateTexture(nil, "OVERLAY")
+	row.Material:SetSize(PrePick.MATERIAL_SIZE, PrePick.MATERIAL_SIZE)
+	row.Material:SetPoint("TOPRIGHT", row, "TOPRIGHT", -4, 0)
+	row.Material:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+	row.Material:Hide()
 	row.Value = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	row.Value:SetPoint("TOP", row, "TOP", 0, -1)
-	row.Value:SetPoint("RIGHT", row, "RIGHT", -4 - sideW, 0)
+	row.Value:SetPoint("RIGHT", row, "RIGHT", -4 - materialSlot - sideW, 0)
 	row.Value:SetSize(sideW, 12)
 	row.Value:SetJustifyH("RIGHT")
 	row.Level = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	row.Level:SetPoint("TOP", row, "TOP", 0, -1)
-	row.Level:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+	row.Level:SetPoint("RIGHT", row, "RIGHT", -4 - materialSlot, 0)
 	row.Level:SetSize(sideW, 12)
 	row.Level:SetJustifyH("RIGHT")
 
@@ -628,22 +626,24 @@ function PrePick.Render()
 			local isSuggested = decision and decision.index == c.index
 			-- Name line: name left, vendor value right of centre, ilvl right. The
 			-- recommended / your-pick badges sit on the item icon's corners.
+			-- Armour material icon at the right edge of the top line: cloth / leather /
+			-- mail / plate only, never on a neutral slot (cloaks are cloth for everyone,
+			-- so the type says nothing). White = your best type, dimmed = wearable but
+			-- lighter, red = cannot wear.
+			local material = c.classID == Rules.CLASS_ARMOR and not Rules.NEUTRAL_SLOTS[c.equipLoc or ""]
+				and Rules.ARMOR_BADGE_TEXTURES[c.subclassID] or nil
+			if material then
+				row.Material:SetTexture(material)
+				if c.wearable == false then row.Material:SetVertexColor(1, 0.25, 0.25)
+				elseif c.fit and c.fit.lighter then row.Material:SetVertexColor(0.5, 0.5, 0.5)
+				else row.Material:SetVertexColor(1, 1, 1) end
+				row.Material:Show()
+			else
+				row.Material:Hide()
+			end
 			row.Name:SetText(hex .. (c.name or "?") .. "|r")
 			row.Recommended:SetShown(isSuggested and true or false)
 			row.Picked:SetShown(isPicked)
-			-- Armour material badge (lower-right of the icon): cloth / leather / mail /
-			-- plate only; dimmed when wearable but lighter than the class's best type.
-			local material = c.classID == Rules.CLASS_ARMOR and Rules.ARMOR_BADGE_TEXTURES[c.subclassID] or nil
-			if material then
-				row.Material:SetTexture(material)
-				local dim = c.fit and c.fit.lighter and 0.45 or 1
-				row.Material:SetVertexColor(dim, dim, dim)
-				row.Material:Show()
-				row.MaterialBack:Show()
-			else
-				row.Material:Hide()
-				row.MaterialBack:Hide()
-			end
 			row.Value:SetText(c.loaded == false and "" or NS.FormatMoney((c.sellPrice or 0) * (c.count or 1)))
 			local wornLevel = c.worn and c.worn.itemLevel or nil
 			row.Level:SetText(string.format("|cffb0b0b0%s|r %s%s", L["ilvl"], FormatValue(c.itemLevel or 0), FormatDelta(wornLevel and ((c.itemLevel or 0) - wornLevel) or nil)))
