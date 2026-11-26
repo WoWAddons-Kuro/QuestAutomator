@@ -219,6 +219,22 @@ end
 -- seen in-game 2026-11-26 on a hunter). Those lines are only in the rendered tooltip,
 -- so a hidden scanning tooltip (SetHyperlink) is read with the same line parser the
 -- other flavour uses, and whatever the API missed is merged in.
+--
+-- AND: Classic's GetItemStats reports attack power in ITEM-BUDGET units, not the
+-- number the tooltip prints. The item stat budget values 1 point = 1 Str = 1 Agi =
+-- 2 AP, and the API hands back the budget point: Carving Knife of Power "+2 Attack
+-- Power" -> ITEM_MOD_ATTACK_POWER_SHORT = 1 (in-game 2026-11-26; owner research).
+-- Multiply by 2 to get the displayed AP, which is what the stat weights are tuned
+-- against (HUNTER ATTACK_POWER = 1.0 means one displayed AP, not one budget point).
+-- The tooltip scan, when it has the line, already carries the displayed number and
+-- wins over the API for these keys so the two sources agree.
+Era.AP_BUDGET_SCALE = 2
+Era.BUDGET_SCALED_KEYS = {
+	ATTACK_POWER = Era.AP_BUDGET_SCALE,
+	RANGED_ATTACK_POWER = Era.AP_BUDGET_SCALE,
+	FERAL_ATTACK_POWER = Era.AP_BUDGET_SCALE,
+}
+
 local scanTooltip
 local SCAN_NAME = "QuestAutomatorEraScanTooltip"
 
@@ -269,6 +285,38 @@ end
 
 function Era.ItemStats(link)
 	if not link then return nil end
+	local stats, fromTooltip = Era.ItemStatsSources(link)
+	if not stats then return NS.Rewards and NS.Rewards.DeriveWeaponStats(fromTooltip) or fromTooltip end
+	-- API values are budget points for the AP family: scale to displayed AP first.
+	for key, scale in pairs(Era.BUDGET_SCALED_KEYS) do
+		if type(stats[key]) == "number" then stats[key] = stats[key] * scale end
+	end
+	-- The tooltip prints displayed numbers: it fills gaps everywhere and, for the
+	-- scaled keys, is trusted over the (now scaled) API if both are present.
+	for key, amount in pairs(fromTooltip or {}) do
+		if stats[key] == nil or Era.BUDGET_SCALED_KEYS[key] then
+			stats[key] = amount
+		end
+	end
+	return NS.Rewards and NS.Rewards.DeriveWeaponStats(stats) or stats
+end
+
+-- Debug: the raw tables each source produced for a link, before merging, so a wrong
+-- number can be pinned on the API, the scan, or the merge.  /qam itemstats <link>
+function Era.DumpItemStats(link)
+	local api, scan = Era.ItemStatsSources(link)
+	local raw = NS.Call("GetItemStats", link)
+	NS.Print("GetItemStats raw:")
+	for k, v in pairs(type(raw) == "table" and raw or {}) do NS.Print("  %s = %s", tostring(k), tostring(v)) end
+	NS.Print("normalised API: %s", api and table.concat((function() local t = {} for k, v in pairs(api) do t[#t + 1] = k .. "=" .. tostring(v) end table.sort(t) return t end)(), ", ") or "nil")
+	NS.Print("tooltip scan:   %s", scan and table.concat((function() local t = {} for k, v in pairs(scan) do t[#t + 1] = k .. "=" .. tostring(v) end table.sort(t) return t end)(), ", ") or "nil")
+	local merged = Era.ItemStats(link)
+	NS.Print("merged:         %s", merged and table.concat((function() local t = {} for k, v in pairs(merged) do t[#t + 1] = k .. "=" .. tostring(v) end table.sort(t) return t end)(), ", ") or "nil")
+	local lines = ScanTooltipLines(link)
+	for i, l in ipairs(lines and lines.lines or {}) do NS.Print("  line %d: [%s] [%s]", i, tostring(l.leftText), tostring(l.rightText)) end
+end
+
+function Era.ItemStatsSources(link)
 	local stats = Client.NormalizeItemStats(NS.Call("GetItemStats", link))
 	-- The scan is a bonus; if it ever throws, the API stats alone must still come back
 	-- (an error here propagated through Tooltip.Describe and silenced every tooltip).
@@ -281,11 +329,7 @@ function Era.ItemStats(link)
 	else
 		NS.WarnOnce("era-scan", "item scan: " .. tostring(result))
 	end
-	if not stats then return NS.Rewards and NS.Rewards.DeriveWeaponStats(fromTooltip) or fromTooltip end
-	for key, amount in pairs(fromTooltip or {}) do
-		if stats[key] == nil then stats[key] = amount end
-	end
-	return NS.Rewards and NS.Rewards.DeriveWeaponStats(stats) or stats
+	return stats, fromTooltip
 end
 
 function Era.DebugReport()

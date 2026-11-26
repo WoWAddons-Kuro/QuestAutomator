@@ -114,8 +114,11 @@ function Tooltip.BreakdownRows(info)
 	rows[#rows + 1] = { DIM .. L["weights"] .. "|r", DIM .. tostring(player.class or "?") .. (profile ~= "" and (" / " .. tostring(profile)) or "") .. "|r" }
 	rows[#rows + 1] = { DIM .. L["this item"] .. "|r", DIM .. Fmt(info.value) .. "|r" }
 	StatRows(rows, info.stats, player, info.weaponSubclass, "  ")
-	if info.fit and info.fit.typeScore and info.fit.typeScore < 1 then
-		rows[#rows + 1] = { "  " .. DIM .. L["type factor"] .. "|r", DIM .. Fmt(info.fit.typeScore) .. "|r" }
+	-- Armour only: the hand-in scales an armour piece by how well its class fits
+	-- (Rules.LIGHTER for cloth on a hunter, NEUTRAL for cloaks / rings). The weapon
+	-- proficiency factor exists too but says nothing a player wants to read here.
+	if not info.weaponSubclass and info.fit and info.fit.typeScore and info.fit.typeScore < 1 then
+		rows[#rows + 1] = { "  " .. DIM .. L["Armor-fit factor"] .. "|r", DIM .. Fmt(info.fit.typeScore) .. "|r" }
 	end
 	if info.worn then
 		rows[#rows + 1] = { DIM .. L["upgrade band"] .. "|r",

@@ -545,6 +545,14 @@ SlashCmdList["QUESTAUTOMATOR"] = function(msg)
 		NS.ToggleMinimap()
 	elseif cmd == "why" or cmd == "explain" then
 		NS.Glow.Explain()
+	elseif cmd == "itemstats" then
+		-- Debug: dump the raw stat sources for a shift-clicked link (or the main hand).
+		local link = rest ~= "" and rest or NS.SafeString(NS.Call("GetInventoryItemLink", "player", 16))
+		if NS.Client and NS.Client.DumpItemStats and link then
+			NS.Client.DumpItemStats(link)
+		else
+			NS.Print("itemstats: no link, or this client has no dump")
+		end
 	elseif cmd == "debug" then
 		NS.DebugReport()
 	else
