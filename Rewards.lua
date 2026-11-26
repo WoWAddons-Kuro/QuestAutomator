@@ -336,7 +336,22 @@ end
 -- picked by the weapon's kind); speed weights may be negative (slower is better).
 --------------------------------------------------------------------------------
 -- Pseudo-stats that are resolved per weapon kind rather than read straight from WEIGHTS.
-Rewards.WEAPON_STAT_KEYS = { DAMAGE_PER_SECOND = "DPS", ATTACK_SPEED = "SPEED" }
+Rewards.WEAPON_STAT_KEYS = { DAMAGE_PER_SECOND = "DPS", AVERAGE_DAMAGE = "HIT" }
+
+-- Average damage per swing = DPS x speed, derived once when a weapon's stats are
+-- read (ATTACK_SPEED is parsed from the tooltip's "Speed 2.80" and consumed here;
+-- it is never scored on its own - a constant-range stat, 1.2..4.0 s at every level,
+-- is noise next to DPS that grows with item level, while avg hit grows with it).
+-- Weapons whose tooltip has no speed line keep whatever came in.
+function Rewards.DeriveWeaponStats(stats)
+	if type(stats) ~= "table" then return stats end
+	local dps, speed = tonumber(stats.DAMAGE_PER_SECOND), tonumber(stats.ATTACK_SPEED)
+	if dps and speed and speed > 0 and stats.AVERAGE_DAMAGE == nil then
+		stats.AVERAGE_DAMAGE = dps * speed
+	end
+	stats.ATTACK_SPEED = nil
+	return stats
+end
 
 local function WeightFor(player, key, weaponSubclass)
 	local kindKey = Rewards.WEAPON_STAT_KEYS[key]

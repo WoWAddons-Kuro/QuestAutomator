@@ -340,7 +340,7 @@ L["weights"] = "weights"
 L["this item"] = "this item"
 L["worn"] = "worn"
 L["no weight"] = "no weight"
-L["type factor (hand-in only)"] = "type factor (hand-in only)"
+L["type factor"] = "type factor"
 L["upgrade band"] = "upgrade band"
 -- Stat value vs the worn item
 L["%s over what you wear"] = "%s over what you wear"

@@ -80,7 +80,7 @@ Rules.STAT_KEYS = {
 	"MANA", "HEALTH",
 }
 -- Pseudo-stats read from the tooltip, not ITEM_MOD_ strings.
-Rules.EXTRA_KEYS = { "ARMOR", "DAMAGE_PER_SECOND" }
+Rules.EXTRA_KEYS = { "ARMOR", "DAMAGE_PER_SECOND", "ATTACK_SPEED" }
 
 -- Stat point values per class: one point of the stat is worth this much. A reward's
 -- value is the weighted sum of its stats (Rewards.StatValue) and is compared with the
@@ -114,25 +114,31 @@ Rules.WEIGHTS = {
 
 -- Weapon pseudo-stats, by weapon kind (Rules.WeaponCategory). DPS: what the class
 -- actually swings or shoots with is worth a lot, the other kind next to nothing.
--- SPEED: the weapon's attack speed in seconds; negative = slower is better
--- (normalised auto-attacks, big-hit specials), positive = faster is better
--- (poisons, Windfury), 0 = does not matter. Stored in WEIGHTS under
--- MELEE_DPS / RANGED_DPS / MELEE_SPEED / RANGED_SPEED so the editor and the
--- per-account overrides treat them like any other stat.
+-- HIT: average damage per swing = DPS x speed (Rewards.DeriveWeaponStats, computed
+-- when the stats are read). At equal DPS a slower weapon hits harder, so a HIT
+-- weight is how a class says "I want big hits" (hunter Raptor Strike, warrior
+-- Mortal Strike, paladin seals, rogue Backstab/Ambush). Unlike a raw speed stat
+-- (a constant 1.2..4.0 s at every level, noise next to DPS that grows with item
+-- level) avg hit scales with the item, so its weight stays meaningful at 60.
+-- Stored in WEIGHTS under MELEE_DPS / RANGED_DPS / MELEE_HIT / RANGED_HIT so the
+-- editor and the per-account overrides treat them like any other stat.
 Rules.WEAPON_WEIGHT_KEYS = {
 	DPS = { melee = "MELEE_DPS", ranged = "RANGED_DPS" },
-	SPEED = { melee = "MELEE_SPEED", ranged = "RANGED_SPEED" },
+	HIT = { melee = "MELEE_HIT", ranged = "RANGED_HIT" },
 }
 Rules.DPS_DEFAULT = 0.1
 do
 	local melee  = { WARRIOR = 4.0, ROGUE = 4.0, SHAMAN = 4.0, PALADIN = 4.0, DRUID = 4.0, HUNTER = 0.8 }
 	local ranged = { HUNTER = 4.0, PRIEST = 2.5, MAGE = 2.0 }
-	local meleeSpeed = { PALADIN = -0.1, HUNTER = -0.1, WARRIOR = -0.1, ROGUE = 0.1, SHAMAN = 0.1 }
+	-- Hunter: both hands matter (owner 2026-11-26). Melee is Raptor Strike / Mongoose Bite
+	-- big hits, so avg hit outweighs DPS there; ranged auto-shot is DPS first, Aimed Shot second.
+	local meleeHit  = { WARRIOR = 0.2, PALADIN = 0.2, HUNTER = 1.2 }
+	local rangedHit = { HUNTER = 2.0 }
 	for class, profile in pairs(Rules.WEIGHTS) do
 		profile.MELEE_DPS = melee[class] or Rules.DPS_DEFAULT
 		profile.RANGED_DPS = ranged[class] or Rules.DPS_DEFAULT
-		profile.MELEE_SPEED = meleeSpeed[class] or 0
-		profile.RANGED_SPEED = 0
+		profile.MELEE_HIT = meleeHit[class] or 0
+		profile.RANGED_HIT = rangedHit[class] or 0
 	end
 end
 
@@ -191,8 +197,10 @@ Rules.EDITABLE_STATS = {
 	{ key = "DEFENSE_SKILL_RATING", short = "Def" }, { key = "DODGE_RATING", short = "Dodge" }, { key = "PARRY_RATING", short = "Parry" },
 	{ key = "BLOCK_RATING", short = "Block" }, { key = "BLOCK_VALUE", short = "BlkV" },
 	{ key = "ARMOR", short = "Armor" }, { key = "MANA", short = "Mana" }, { key = "HEALTH", short = "HP" },
+	-- The grid is two columns, row-major: this order puts melee in the left column
+	-- and ranged in the right, DPS over avg hit in each.
 	{ key = "MELEE_DPS", short = "mDPS" }, { key = "RANGED_DPS", short = "rDPS" },
-	{ key = "MELEE_SPEED", short = "mSpd" }, { key = "RANGED_SPEED", short = "rSpd" },
+	{ key = "MELEE_HIT", short = "mHit" }, { key = "RANGED_HIT", short = "rHit" },
 }
 
 --------------------------------------------------------------------------------
@@ -238,15 +246,15 @@ Rules.BUILTIN_PROFILE_DELTAS = {
 		-- Enhancement: pure melee. Int only for mana to shock; spell stats near nothing.
 		enhancement = { STRENGTH = 1.2, AGILITY = 1.0, ATTACK_POWER = 0.6, STAMINA = 0.5, INTELLECT = 0.3, SPIRIT = 0.1,
 			SPELL_POWER = 0.1, SPELL_DAMAGE_DONE = 0.1, SPELL_HEALING_DONE = 0.05, MANA_REGENERATION = 0.3,
-			HIT_RATING = 1.0, CRIT_RATING = 1.0, MELEE_SPEED = 0.15 },
+			HIT_RATING = 1.0, CRIT_RATING = 1.0, MELEE_HIT = 0 },
 		-- Elemental: caster DPS. Weapon DPS is a stat stick; Int / spell damage / crit carry it.
 		elemental = { STRENGTH = 0.05, AGILITY = 0.05, ATTACK_POWER = 0, STAMINA = 0.4, INTELLECT = 1.4, SPIRIT = 0.4,
 			SPELL_POWER = 1.2, SPELL_DAMAGE_DONE = 1.2, SPELL_HEALING_DONE = 0.3, MANA_REGENERATION = 0.8,
-			HIT_RATING = 1.0, CRIT_RATING = 0.9, MANA = 0.05, MELEE_DPS = 0.1, MELEE_SPEED = 0 },
+			HIT_RATING = 1.0, CRIT_RATING = 0.9, MANA = 0.05, MELEE_DPS = 0.1, MELEE_HIT = 0 },
 		-- Restoration: healer. Healing / MP5 / Int / Spirit; damage stats near nothing.
 		restoration = { STRENGTH = 0.05, AGILITY = 0.05, ATTACK_POWER = 0, STAMINA = 0.4, INTELLECT = 1.3, SPIRIT = 0.8,
 			SPELL_POWER = 1.0, SPELL_DAMAGE_DONE = 0.2, SPELL_HEALING_DONE = 1.3, MANA_REGENERATION = 1.3,
-			HIT_RATING = 0.1, CRIT_RATING = 0.5, MANA = 0.05, MELEE_DPS = 0.1, MELEE_SPEED = 0 },
+			HIT_RATING = 0.1, CRIT_RATING = 0.5, MANA = 0.05, MELEE_DPS = 0.1, MELEE_HIT = 0 },
 	},
 }
 
@@ -258,6 +266,27 @@ end
 
 -- Built-ins are built once from WEIGHTS (after the client overrides ran above).
 Rules.BUILTIN_PROFILES = {}
+
+-- A custom profile is a COMPLETE copy of a built-in taken at fork time. When a new
+-- weight key is introduced later (MELEE_HIT / RANGED_HIT, 2026-11-26) every existing
+-- custom row lacks it and would silently score that stat at 0 while the grid showed
+-- the built-in's number greyed in. Fill the gaps from the forked-from built-in once
+-- at login; a key the player has set is never touched.
+function Rules.CompleteCustomProfiles()
+	local store = NS.db and NS.db.statProfiles
+	if type(store) ~= "table" then return end
+	for _, p in pairs(store) do
+		local base = p and not p.builtin and Rules.Profile(p.forkedFrom)
+		if base and type(p.weights) == "table" then
+			for key, weight in pairs(base.weights) do
+				if p.weights[key] == nil and type(weight) == "number" then
+					p.weights[key] = weight
+				end
+			end
+		end
+	end
+end
+
 for class, row in pairs(Rules.WEIGHTS) do
 	local list = {}
 	local names = Rules.BUILTIN_PROFILE_NAMES[class] or {}
@@ -625,7 +654,7 @@ function Rules.Weights(class)
 	if not profile then return { STAMINA = 0.5 }, "unknown" end
 	local weights = {}
 	for key, value in pairs(profile.weights) do
-		if type(value) == "number" and value > 0 then weights[key] = value end
+		if type(value) == "number" and value ~= 0 then weights[key] = value end
 	end
 	return weights, profile.builtin and "builtin" or "custom"
 end
@@ -653,12 +682,12 @@ function Rules.StatName(key)
 	if key == "ARMOR" then return _G["RESISTANCE0_NAME"] or _G["ARMOR"] or L["Armor"] end
 	-- Our own short label: the client's ITEM_MOD_DAMAGE_PER_SECOND_SHORT is "Damage Per Second" and clips in the pick grid.
 	if key == "DAMAGE_PER_SECOND" then return L["Weapon DPS"] end
-	if key == "ATTACK_SPEED" then return L["Weapon speed"] end
+	if key == "AVERAGE_DAMAGE" then return L["Avg hit damage"] end
 	-- Weapon pseudo-stats of the stat-value editor.
 	if key == "MELEE_DPS" then return L["Melee weapon DPS"] end
 	if key == "RANGED_DPS" then return L["Ranged weapon DPS"] end
-	if key == "MELEE_SPEED" then return L["Melee weapon speed"] end
-	if key == "RANGED_SPEED" then return L["Ranged weapon speed"] end
+	if key == "MELEE_HIT" then return L["Melee avg hit damage"] end
+	if key == "RANGED_HIT" then return L["Ranged avg hit damage"] end
 	local name = _G["ITEM_MOD_" .. key .. "_SHORT"]
 	if type(name) == "string" and name ~= "" then return name end
 	return key:sub(1, 1) .. key:sub(2):lower():gsub("_", " ")

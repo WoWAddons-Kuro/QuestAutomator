@@ -105,6 +105,8 @@ local function StatRows(rows, stats, player, weaponSubclass, indent)
 end
 
 -- The full computation behind Tooltip.Line, as { left, right } pairs (Shift held).
+-- Only THIS item's rows: the worn item's own tooltip (the "Currently Equipped" compare)
+-- carries its own breakdown, so repeating it here only confused which rows were whose.
 function Tooltip.BreakdownRows(info)
 	local rows = {}
 	local player = info.player
@@ -113,11 +115,9 @@ function Tooltip.BreakdownRows(info)
 	rows[#rows + 1] = { DIM .. L["this item"] .. "|r", DIM .. Fmt(info.value) .. "|r" }
 	StatRows(rows, info.stats, player, info.weaponSubclass, "  ")
 	if info.fit and info.fit.typeScore and info.fit.typeScore < 1 then
-		rows[#rows + 1] = { "  " .. DIM .. L["type factor (hand-in only)"] .. "|r", DIM .. Fmt(info.fit.typeScore) .. "|r" }
+		rows[#rows + 1] = { "  " .. DIM .. L["type factor"] .. "|r", DIM .. Fmt(info.fit.typeScore) .. "|r" }
 	end
 	if info.worn then
-		rows[#rows + 1] = { DIM .. L["worn"] .. "|r", DIM .. Fmt(info.wornValue) .. "|r" }
-		StatRows(rows, info.worn.stats, player, info.weaponSubclass, "  ")
 		rows[#rows + 1] = { DIM .. L["upgrade band"] .. "|r",
 			string.format("%s%d%% of %s = %s|r", DIM, math.floor((info.band or 0) * 100 + 0.5), Fmt(info.wornValue), Fmt(info.wornValue * (info.band or 0))) }
 	end

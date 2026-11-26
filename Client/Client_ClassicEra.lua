@@ -203,7 +203,7 @@ end
 -- (On Forever form damage IS based on weapon DPS, so Forever leaves the 4.0 default.)
 function Era.StatWeightOverrides()
 	return {
-		DRUID = { MELEE_DPS = 0, MELEE_SPEED = 0 },
+		DRUID = { MELEE_DPS = 0, MELEE_HIT = 0 },
 	}
 end
 
@@ -251,8 +251,17 @@ local function ScanTooltipLines(link)
 		local ok, text = pcall(region.GetText, region)
 		return ok and NS.SafeString(text) or nil
 	end
+	-- ClearLines resets the count but does NOT blank hand-added font strings, so a
+	-- right-column text from the previous item ("Speed 1.60") survives into this one
+	-- (seen in-game: a 2.80 staff read as 1.6). Only the first NumLines() rows are
+	-- this item's; everything is read, then every string is wiped for the next scan.
 	for i = 1, n do
 		lines[#lines + 1] = { leftText = Text(_G[SCAN_NAME .. "TextLeft" .. i]), rightText = Text(_G[SCAN_NAME .. "TextRight" .. i]) }
+	end
+	for i = 1, 30 do
+		local l, r = _G[SCAN_NAME .. "TextLeft" .. i], _G[SCAN_NAME .. "TextRight" .. i]
+		if l then pcall(l.SetText, l, nil) end
+		if r then pcall(r.SetText, r, nil) end
 	end
 	pcall(scanTooltip.Hide, scanTooltip)
 	return { lines = lines }
@@ -261,12 +270,22 @@ end
 function Era.ItemStats(link)
 	if not link then return nil end
 	local stats = Client.NormalizeItemStats(NS.Call("GetItemStats", link))
-	local fromTooltip = NS.Rewards and NS.Rewards.StatsFromTooltipData(ScanTooltipLines(link))
-	if not stats then return fromTooltip end
+	-- The scan is a bonus; if it ever throws, the API stats alone must still come back
+	-- (an error here propagated through Tooltip.Describe and silenced every tooltip).
+	local fromTooltip
+	local okScan, result = pcall(function()
+		return NS.Rewards and NS.Rewards.StatsFromTooltipData(ScanTooltipLines(link))
+	end)
+	if okScan then
+		fromTooltip = result
+	else
+		NS.WarnOnce("era-scan", "item scan: " .. tostring(result))
+	end
+	if not stats then return NS.Rewards and NS.Rewards.DeriveWeaponStats(fromTooltip) or fromTooltip end
 	for key, amount in pairs(fromTooltip or {}) do
 		if stats[key] == nil then stats[key] = amount end
 	end
-	return stats
+	return NS.Rewards and NS.Rewards.DeriveWeaponStats(stats) or stats
 end
 
 function Era.DebugReport()

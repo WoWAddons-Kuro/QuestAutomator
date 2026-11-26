@@ -136,14 +136,14 @@ local eraNS = { SafeNumber = NS.SafeNumber, SafeString = NS.SafeString, SafeBool
 assert(loadfile('QuestAutomator/Client/Client_ClassicEra.lua'))('QuestAutomator', eraNS)
 local eraOverrides = eraNS.ClientFlavours.classic_era.StatWeightOverrides()
 assert(eraOverrides.DRUID and eraOverrides.DRUID.MELEE_DPS == 0, 'Era client must zero druid melee DPS')
-local savedDPS, savedSpeed = Rules.WEIGHTS.DRUID.MELEE_DPS, Rules.WEIGHTS.DRUID.MELEE_SPEED
+local savedDPS, savedHit = Rules.WEIGHTS.DRUID.MELEE_DPS, Rules.WEIGHTS.DRUID.MELEE_HIT
 Rules.ApplyClientWeightOverrides(eraOverrides)
 assert(Rules.WEIGHTS.DRUID.MELEE_DPS == 0 and Rules.WEIGHTS.ROGUE.MELEE_DPS == 4.0, 'override touches only the listed class/stat')
 choices = { mace(1, 9.5, 300), gun }
 d = Rewards.Evaluate(choices, fit, player('DRUID', 20))
 assert(d.index == 2 and d.reason == 'fallback' and d.tier == 'tier5Action', 'Era druid: hammer DPS is worthless -> no upgrade -> best cash item (the gun)')
 assert(choices[1].fit.why == 'nostats')
-Rules.WEIGHTS.DRUID.MELEE_DPS, Rules.WEIGHTS.DRUID.MELEE_SPEED = savedDPS, savedSpeed
+Rules.WEIGHTS.DRUID.MELEE_DPS, Rules.WEIGHTS.DRUID.MELEE_HIT = savedDPS, savedHit
 print('PASS Classic Era druid: weapon DPS ignored, hammer is not an upgrade')
 
 -- Classic Era item stats: C_Item.GetItemStats and C_TooltipInfo do not exist there

@@ -75,9 +75,12 @@ local function BuildRow(parent, entry, onChanged)
 	row.Box:SetNumeric(false)
 	row.Box:SetMaxLetters(5)
 	row.Box:SetJustifyH("RIGHT")
+	-- InputBoxTemplate's insets assume left-aligned text (right inset ~0), so with
+	-- RIGHT justify the caret drew outside the box. Give the right edge room.
+	row.Box:SetTextInsets(4, 6, 0, 0)
 	-- Placeholder: the class default, grey, inside the box while it is empty.
 	row.Placeholder = row.Box:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-	row.Placeholder:SetPoint("RIGHT", row.Box, "RIGHT", -2, 0)
+	row.Placeholder:SetPoint("RIGHT", row.Box, "RIGHT", -6, 0)
 	row.Placeholder:SetJustifyH("RIGHT")
 	local function RefreshPlaceholder()
 		local text = row.Box:GetText() or ""
@@ -103,7 +106,7 @@ local function BuildRow(parent, entry, onChanged)
 			end
 			return
 		end
-		local v = ParseWeight(text)
+		local v = ParseWeight(text, entry.key)
 		-- Unparseable, or the same number the profile already has: nothing happens.
 		-- A value that MATCHES the placeholder must not create a custom profile.
 		if v == nil or v == current then
@@ -137,11 +140,11 @@ local function BuildRow(parent, entry, onChanged)
 		-- (gold label) with the base greyed behind; an unchanged cell is placeholder only.
 		local changed = p and not p.builtin and value ~= base
 		local shown = changed and base or value
-		self.Placeholder:SetText(shown > 0 and FormatWeight(shown) or "")
+		self.Placeholder:SetText(shown ~= 0 and FormatWeight(shown) or "")
 		if changed then
-			self.Box:SetText(value > 0 and FormatWeight(value) or "0")
+			self.Box:SetText(FormatWeight(value))
 			self.Label:SetTextColor(1, 0.82, 0)
-			if value > 0 then self.Box:SetTextColor(1, 1, 1) else self.Box:SetTextColor(0.5, 0.5, 0.5) end
+			if value ~= 0 then self.Box:SetTextColor(1, 1, 1) else self.Box:SetTextColor(0.5, 0.5, 0.5) end
 		else
 			self.Box:SetText("")
 			self.Label:SetTextColor(1, 1, 1)

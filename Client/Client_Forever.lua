@@ -148,11 +148,11 @@ function Forever.ItemStats(link)
 	if not link then return nil end
 	local stats = Client.NormalizeItemStats(NS.Call("C_Item.GetItemStats", link))
 	local fromTooltip = NS.Rewards.StatsFromTooltipData(NS.Call("C_TooltipInfo.GetHyperlink", link))
-	if not stats then return fromTooltip end
+	if not stats then return NS.Rewards.DeriveWeaponStats(fromTooltip) end
 	for _, key in ipairs(NS.Rules.EXTRA_KEYS) do
 		if stats[key] == nil and fromTooltip and fromTooltip[key] then stats[key] = fromTooltip[key] end
 	end
-	return stats
+	return NS.Rewards.DeriveWeaponStats(stats)
 end
 
 function Forever.DebugReport()
