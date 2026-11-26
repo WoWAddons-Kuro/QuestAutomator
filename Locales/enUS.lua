@@ -335,6 +335,13 @@ L["%d ignored quests"] = "%d ignored quests"
 
 -- Untrained weapon (class can learn it, skill not trained yet)
 L["needs weapon training"] = "needs weapon training"
+-- Tooltip: Shift held shows the full computation
+L["weights"] = "weights"
+L["this item"] = "this item"
+L["worn"] = "worn"
+L["no weight"] = "no weight"
+L["type factor (hand-in only)"] = "type factor (hand-in only)"
+L["upgrade band"] = "upgrade band"
 -- Stat value vs the worn item
 L["%s over what you wear"] = "%s over what you wear"
 L["no reward beats what you wear"] = "no reward beats what you wear"

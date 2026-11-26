@@ -213,9 +213,60 @@ end
 -- GetItemStats(link) global: { ITEM_MOD_*_SHORT = n, RESISTANCE0_NAME = armour }.
 -- Observed: GetItemStats(worn bow) -> { ITEM_MOD_DAMAGE_PER_SECOND_SHORT = 2.38 }.
 -- An uncached item returns an empty table -> nil here (caller treats as not loaded).
+--
+-- BUT: GetItemStats does NOT report the stats a random suffix adds ("of the Owl":
+-- +Int/+Spirit came back as nothing, so a cloth belt of the Owl scored armour only,
+-- seen in-game 2026-11-26 on a hunter). Those lines are only in the rendered tooltip,
+-- so a hidden scanning tooltip (SetHyperlink) is read with the same line parser the
+-- other flavour uses, and whatever the API missed is merged in.
+local scanTooltip
+local SCAN_NAME = "QuestAutomatorEraScanTooltip"
+
+local function ScanTooltipLines(link)
+	if type(CreateFrame) ~= "function" then return nil end
+	if not scanTooltip then
+		-- No GameTooltipTemplate: the template wires shopping tooltips (the "Currently
+		-- Equipped" compare), and a template scan tooltip steals/hides them from the
+		-- real GameTooltip mid-hover. Plain GameTooltip + hand-made font strings.
+		local ok, tt = pcall(CreateFrame, "GameTooltip", SCAN_NAME, nil)
+		if not ok or type(tt) ~= "table" then return nil end
+		for i = 1, 30 do
+			local left = tt:CreateFontString(SCAN_NAME .. "TextLeft" .. i, "ARTWORK", "GameTooltipText")
+			local right = tt:CreateFontString(SCAN_NAME .. "TextRight" .. i, "ARTWORK", "GameTooltipText")
+			tt:AddFontStrings(left, right)
+		end
+		if tt.SetScript then pcall(tt.SetScript, tt, "OnTooltipAddMoney", nil) end
+		scanTooltip = tt
+	end
+	local okOwner = pcall(scanTooltip.SetOwner, scanTooltip, WorldFrame or UIParent, "ANCHOR_NONE")
+	if not okOwner then return nil end
+	pcall(scanTooltip.ClearLines, scanTooltip)
+	local okLink = pcall(scanTooltip.SetHyperlink, scanTooltip, link)
+	if not okLink then return nil end
+	local lines = {}
+	local okN, n = pcall(scanTooltip.NumLines, scanTooltip)
+	n = okN and NS.SafeNumber(n) or 0
+	local function Text(region)
+		if not region or type(region.GetText) ~= "function" then return nil end
+		local ok, text = pcall(region.GetText, region)
+		return ok and NS.SafeString(text) or nil
+	end
+	for i = 1, n do
+		lines[#lines + 1] = { leftText = Text(_G[SCAN_NAME .. "TextLeft" .. i]), rightText = Text(_G[SCAN_NAME .. "TextRight" .. i]) }
+	end
+	pcall(scanTooltip.Hide, scanTooltip)
+	return { lines = lines }
+end
+
 function Era.ItemStats(link)
 	if not link then return nil end
-	return Client.NormalizeItemStats(NS.Call("GetItemStats", link))
+	local stats = Client.NormalizeItemStats(NS.Call("GetItemStats", link))
+	local fromTooltip = NS.Rewards and NS.Rewards.StatsFromTooltipData(ScanTooltipLines(link))
+	if not stats then return fromTooltip end
+	for key, amount in pairs(fromTooltip or {}) do
+		if stats[key] == nil then stats[key] = amount end
+	end
+	return stats
 end
 
 function Era.DebugReport()

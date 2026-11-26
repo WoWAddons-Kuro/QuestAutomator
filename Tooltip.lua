@@ -56,18 +56,72 @@ function Tooltip.Describe(link)
 	local weaponSubclass = Rules.IsWeapon(classID, subclassID) and subclassID or nil
 	local value = Rewards.StatValue(c.stats, player, weaponSubclass)
 	local worn = Rewards.WornItem(equipLoc, player)
-	local out = { wearable = true, value = value, untrained = fit.untrained, player = player }
+	local out = { wearable = true, value = value, untrained = fit.untrained, player = player,
+		stats = c.stats, weaponSubclass = weaponSubclass, fit = fit, link = link }
 	-- The item being hovered may BE the worn one (character panel, or a bag item of
 	-- the same kind): comparing it with itself says nothing, so only the score shows.
 	local isWorn = worn and worn.link == link
 	if worn and not worn.empty and not isWorn then
 		out.wornValue = worn.value
+		out.worn = worn
 		out.gain = value - worn.value
 		-- The same margin the hand-in uses (settings.upgradeBand percent).
 		local band = (tonumber(NS.db.settings.upgradeBand) or 10) / 100
+		out.band = band
 		out.upgrade = worn.value <= 0 and value > 0 or out.gain >= worn.value * band
 	end
 	return out
+end
+
+function Tooltip.ShiftHeld()
+	local ok, held = pcall(function() return IsShiftKeyDown and IsShiftKeyDown() end)
+	return ok and held == true
+end
+
+-- One "amount x weight = value" row per stat the class has a weight for, sorted by
+-- value, then the stats that counted for nothing (weight 0), then the total.
+local function StatRows(rows, stats, player, weaponSubclass, indent)
+	local parts, ignored = {}, {}
+	for key, amount in pairs(stats or {}) do
+		local weight = Rewards.WeightFor(player, key, weaponSubclass)
+		if weight ~= 0 and amount and amount ~= 0 then
+			parts[#parts + 1] = { key = key, amount = amount, weight = weight, value = weight * amount }
+		elseif amount and amount ~= 0 then
+			ignored[#ignored + 1] = Rules.StatName(key)
+		end
+	end
+	table.sort(parts, function(a, b)
+		if a.value ~= b.value then return a.value > b.value end
+		return a.key < b.key
+	end)
+	for _, p in ipairs(parts) do
+		rows[#rows + 1] = { indent .. Rules.StatName(p.key),
+			string.format("%s%s x %s = %s|r", DIM, Fmt(p.amount), Fmt(p.weight), Fmt(p.value)) }
+	end
+	if #ignored > 0 then
+		table.sort(ignored)
+		rows[#rows + 1] = { indent .. DIM .. L["no weight"] .. "|r", DIM .. table.concat(ignored, ", ") .. "|r" }
+	end
+end
+
+-- The full computation behind Tooltip.Line, as { left, right } pairs (Shift held).
+function Tooltip.BreakdownRows(info)
+	local rows = {}
+	local player = info.player
+	local profile = player.profileName or player.profile or ""
+	rows[#rows + 1] = { DIM .. L["weights"] .. "|r", DIM .. tostring(player.class or "?") .. (profile ~= "" and (" / " .. tostring(profile)) or "") .. "|r" }
+	rows[#rows + 1] = { DIM .. L["this item"] .. "|r", DIM .. Fmt(info.value) .. "|r" }
+	StatRows(rows, info.stats, player, info.weaponSubclass, "  ")
+	if info.fit and info.fit.typeScore and info.fit.typeScore < 1 then
+		rows[#rows + 1] = { "  " .. DIM .. L["type factor (hand-in only)"] .. "|r", DIM .. Fmt(info.fit.typeScore) .. "|r" }
+	end
+	if info.worn then
+		rows[#rows + 1] = { DIM .. L["worn"] .. "|r", DIM .. Fmt(info.wornValue) .. "|r" }
+		StatRows(rows, info.worn.stats, player, info.weaponSubclass, "  ")
+		rows[#rows + 1] = { DIM .. L["upgrade band"] .. "|r",
+			string.format("%s%d%% of %s = %s|r", DIM, math.floor((info.band or 0) * 100 + 0.5), Fmt(info.wornValue), Fmt(info.wornValue * (info.band or 0))) }
+	end
+	return rows
 end
 
 function Tooltip.Line(info)
@@ -101,6 +155,13 @@ local function OnItem(tooltip, data)
 	-- a blank line sets our row apart from the item's own stat block and other addons' lines
 	tooltip:AddLine(" ")
 	tooltip:AddDoubleLine(left, right)
+	-- Shift held: the full computation, so a surprising verdict can be checked against
+	-- the weights (e.g. armour points dwarfing a few points of a wanted stat).
+	if info.wearable and Tooltip.ShiftHeld() then
+		for _, row in ipairs(Tooltip.BreakdownRows(info)) do
+			tooltip:AddDoubleLine(row[1], row[2])
+		end
+	end
 	if tooltip.Show then tooltip:Show() end
 end
 
